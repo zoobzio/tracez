@@ -1,0 +1,192 @@
+=== RUN   TestCollectorSaturation
+
+=== RUN   TestCollectorSaturation/basic_backpressure
+
+=== RUN   TestCollectorSaturation/buffer_growth
+
+=== RUN   TestCollectorSaturation/buffer_growth/initial
+
+=== RUN   TestCollectorSaturation/buffer_growth/first_growth
+
+=== RUN   TestCollectorSaturation/buffer_growth/moderate_growth
+
+=== RUN   TestCollectorSaturation/buffer_growth/large_growth
+
+=== RUN   TestCollectorSaturation/export_under_load
+
+--- PASS: TestCollectorSaturation (1.09s)
+
+    --- PASS: TestCollectorSaturation/basic_backpressure (0.01s)
+
+    --- PASS: TestCollectorSaturation/buffer_growth (0.00s)
+
+        --- PASS: TestCollectorSaturation/buffer_growth/initial (0.00s)
+
+        --- PASS: TestCollectorSaturation/buffer_growth/first_growth (0.00s)
+
+        --- PASS: TestCollectorSaturation/buffer_growth/moderate_growth (0.00s)
+
+        --- PASS: TestCollectorSaturation/buffer_growth/large_growth (0.00s)
+
+    --- PASS: TestCollectorSaturation/export_under_load (1.08s)
+
+=== RUN   TestContextCascade
+
+=== RUN   TestContextCascade/deep_nesting
+
+    context_cascade_test.go:77: Final span at depth 100: TraceID=d219a0f9a5b30ed68e7b41b80893bf9f
+
+=== RUN   TestContextCascade/concurrent_propagation
+
+    context_cascade_test.go:164: Concurrent propagation results:
+
+    context_cascade_test.go:165:   Goroutines: 48
+
+    context_cascade_test.go:166:   Expected spans: 2449
+
+    context_cascade_test.go:167:   Collected spans: 2448
+
+    context_cascade_test.go:168:   Processed spans: 2400
+
+=== RUN   TestContextCascade/context_corruption
+
+=== RUN   TestContextCascade/context_corruption/nil_context
+
+=== RUN   TestContextCascade/context_corruption/empty_context
+
+=== RUN   TestContextCascade/context_corruption/canceled_context
+
+=== RUN   TestContextCascade/context_corruption/timeout_context
+
+--- PASS: TestContextCascade (0.07s)
+
+    --- PASS: TestContextCascade/deep_nesting (0.01s)
+
+    --- PASS: TestContextCascade/concurrent_propagation (0.06s)
+
+    --- PASS: TestContextCascade/context_corruption (0.00s)
+
+        --- PASS: TestContextCascade/context_corruption/nil_context (0.00s)
+
+        --- PASS: TestContextCascade/context_corruption/empty_context (0.00s)
+
+        --- PASS: TestContextCascade/context_corruption/canceled_context (0.00s)
+
+        --- PASS: TestContextCascade/context_corruption/timeout_context (0.00s)
+
+=== RUN   TestSpanHierarchyCorruption
+
+=== RUN   TestSpanHierarchyCorruption/orphaned_spans
+
+=== RUN   TestSpanHierarchyCorruption/orphaned_spans/nil_context
+
+=== RUN   TestSpanHierarchyCorruption/orphaned_spans/background_context
+
+=== RUN   TestSpanHierarchyCorruption/orphaned_spans/empty_value_context
+
+=== RUN   TestSpanHierarchyCorruption/hierarchy_validation
+
+    span_hierarchy_corruption_test.go:207: Reliability Issue: 3 child spans missing parent IDs (potential race condition)
+
+    span_hierarchy_corruption_test.go:234: Reliability Issue: 6 grandchild spans missing parent IDs (potential race condition)
+
+=== RUN   TestSpanHierarchyCorruption/concurrent_hierarchy
+
+    span_hierarchy_corruption_test.go:308: Concurrent hierarchy results:
+
+    span_hierarchy_corruption_test.go:309:   Expected spans: 1225
+
+    span_hierarchy_corruption_test.go:310:   Collected spans: 1224
+
+    span_hierarchy_corruption_test.go:311:   Hierarchy errors: 0
+
+--- PASS: TestSpanHierarchyCorruption (0.00s)
+
+    --- PASS: TestSpanHierarchyCorruption/orphaned_spans (0.00s)
+
+        --- PASS: TestSpanHierarchyCorruption/orphaned_spans/nil_context (0.00s)
+
+        --- PASS: TestSpanHierarchyCorruption/orphaned_spans/background_context (0.00s)
+
+        --- PASS: TestSpanHierarchyCorruption/orphaned_spans/empty_value_context (0.00s)
+
+    --- PASS: TestSpanHierarchyCorruption/hierarchy_validation (0.00s)
+
+    --- PASS: TestSpanHierarchyCorruption/concurrent_hierarchy (0.00s)
+
+=== RUN   TestSpanMemoryPressure
+
+=== RUN   TestSpanMemoryPressure/tag_expansion
+
+=== RUN   TestSpanMemoryPressure/tag_expansion/small
+
+=== RUN   TestSpanMemoryPressure/tag_expansion/medium
+
+=== RUN   TestSpanMemoryPressure/tag_expansion/large
+
+=== RUN   TestSpanMemoryPressure/tag_expansion/extreme
+
+=== RUN   TestSpanMemoryPressure/concurrent_tags
+
+=== RUN   TestSpanMemoryPressure/span_cleanup
+
+    span_memory_pressure_test.go:219: Memory usage:
+
+    span_memory_pressure_test.go:220:   Initial: 2236416 bytes
+
+    span_memory_pressure_test.go:221:   After spans: 3563520 bytes
+
+    span_memory_pressure_test.go:222:   After cleanup: 3547136 bytes
+
+    span_memory_pressure_test.go:229: Reliability Issue: High memory growth 58.6% (potential memory pressure)
+
+--- PASS: TestSpanMemoryPressure (0.07s)
+
+    --- PASS: TestSpanMemoryPressure/tag_expansion (0.01s)
+
+        --- PASS: TestSpanMemoryPressure/tag_expansion/small (0.00s)
+
+        --- PASS: TestSpanMemoryPressure/tag_expansion/medium (0.00s)
+
+        --- PASS: TestSpanMemoryPressure/tag_expansion/large (0.00s)
+
+        --- PASS: TestSpanMemoryPressure/tag_expansion/extreme (0.00s)
+
+    --- PASS: TestSpanMemoryPressure/concurrent_tags (0.06s)
+
+    --- PASS: TestSpanMemoryPressure/span_cleanup (0.01s)
+
+=== RUN   TestTracerLifecycle
+
+=== RUN   TestTracerLifecycle/startup_shutdown
+
+=== RUN   TestTracerLifecycle/collector_management
+
+    tracer_lifecycle_test.go:112: Collector 0: 100 buffered, 0 dropped
+
+    tracer_lifecycle_test.go:112: Collector 1: 100 buffered, 0 dropped
+
+    tracer_lifecycle_test.go:112: Collector 2: 100 buffered, 0 dropped
+
+    tracer_lifecycle_test.go:112: Collector 3: 100 buffered, 0 dropped
+
+    tracer_lifecycle_test.go:112: Collector 4: 100 buffered, 0 dropped
+
+=== RUN   TestTracerLifecycle/id_pool_behavior
+
+    tracer_lifecycle_test.go:164: Generated 1000 unique trace IDs and 1000 unique span IDs
+
+    tracer_lifecycle_test.go:203: No ID collisions detected in concurrent generation of 1200 IDs
+
+--- PASS: TestTracerLifecycle (0.07s)
+
+    --- PASS: TestTracerLifecycle/startup_shutdown (0.01s)
+
+    --- PASS: TestTracerLifecycle/collector_management (0.05s)
+
+    --- PASS: TestTracerLifecycle/id_pool_behavior (0.01s)
+
+PASS
+
+ok  	github.com/zoobzio/tracez/testing/reliability	1.305s
+

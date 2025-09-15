@@ -1,0 +1,180 @@
+run:
+  timeout: 5m
+  tests: true
+  build-tags:
+    - integration
+  
+linters:
+  enable:
+    # Security-critical linters
+    - gosec        # Comprehensive security analyzer
+    - errorlint    # Proper error handling patterns
+    - noctx        # HTTP requests must have context
+    - bodyclose    # HTTP response body must be closed
+    - sqlclosecheck # SQL rows/statements must be closed
+    
+    # Code quality with security implications
+    - govet        # Suspicious constructs
+    - ineffassign  # Detect ineffectual assignments
+    - staticcheck  # Advanced static analysis
+    - unused       # Unused code detection
+    - typecheck    # Type checking
+    
+    # Error handling
+    - errcheck     # Unchecked errors
+    - errchkjson   # JSON marshaling errors
+    - wastedassign # Wasted assignments
+    
+    # Best practices
+    - gocritic     # Opinionated linter
+    - revive       # Fast, configurable linter
+    - unconvert    # Unnecessary type conversions
+    - dupl         # Code duplication
+    - goconst      # Repeated strings as constants
+    - godot        # Comment sentences
+    - godox        # TODO/FIXME comments
+    - gofmt        # Formatting
+    - goimports    # Import organization
+    - misspell     # Spelling mistakes
+    - nakedret     # Naked returns
+    - prealloc     # Slice capacity hints
+    - predeclared  # Shadowing predeclared identifiers
+    - copyloopvar  # Loop variable capture (replacement for deprecated exportloopref)
+
+linters-settings:
+  gosec:
+    severity: medium
+    confidence: medium
+    excludes:
+      - G104  # We'll use errcheck instead
+      - G404  # Allow crypto/rand fallback to time-based IDs for tracez
+    config:
+      global:
+        audit: true
+  
+  govet:
+    enable-all: true
+  
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+    exclude-functions:
+      - (io.Closer).Close  # Handled by bodyclose
+  
+  gocritic:
+    enabled-checks:
+      # Only non-default checks
+      - commentedOutCode
+      - deferInLoop
+      - emptyFallthrough
+      - emptyStringTest
+      - equalFold
+      - evalOrder
+      - exposedSyncMutex
+      - externalErrorReassign
+      - filepathJoin
+      - hexLiteral
+      - httpNoBody
+      - importShadow
+      - indexAlloc
+      - initClause
+      - nestingReduce
+      - nilValReturn
+      - octalLiteral
+      - preferFilepathJoin
+      - preferFprint
+      - preferStringWriter
+      - preferWriteByte
+      - rangeExprCopy
+      - rangeValCopy
+      - redundantSprint
+      - regexpPattern
+      - regexpSimplify
+      - ruleguard
+      - sloppyReassign
+      - sortSlice
+      - sprintfQuotedString
+      - sqlQuery
+      - stringConcatSimplify
+      - stringXbytes
+      - syncMapLoadAndDelete
+      - truncateCmp
+      - typeAssertChain
+      - typeDefFirst
+      - typeUnparen
+      - unlabelStmt
+      - unnamedResult
+      - unnecessaryBlock
+      - unnecessaryDefer
+      - weakCond
+      - yodaStyleExpr
+  
+  revive:
+    severity: warning
+    rules:
+      - name: blank-imports
+      - name: context-as-argument
+      - name: context-keys-type
+      - name: dot-imports
+      - name: empty-block
+      - name: error-naming
+      - name: error-return
+      - name: error-strings
+      - name: errorf
+      - name: exported
+      - name: if-return
+      - name: increment-decrement
+      - name: indent-error-flow
+      - name: modifies-parameter
+      - name: modifies-value-receiver
+      - name: package-comments
+      - name: range
+      - name: receiver-naming
+      - name: redefines-builtin-id
+      - name: string-of-int
+      - name: superfluous-else
+      - name: time-naming
+      - name: unexported-return
+      - name: unnecessary-stmt
+      - name: unreachable-code
+      - name: unused-parameter
+      - name: unused-receiver
+      - name: useless-break
+      - name: var-declaration
+      - name: var-naming
+  
+  dupl:
+    threshold: 150
+  
+  goconst:
+    min-len: 3
+    min-occurrences: 3
+    
+  misspell:
+    locale: US
+
+issues:
+  exclude-dirs-use-default: false
+  exclude-rules:
+    # Allow TODO comments in development
+    - linters:
+        - godox
+      text: "TODO|FIXME|BUG"
+    
+    # Test files can have longer functions and different struct ordering
+    - path: _test\.go
+      linters:
+        - funlen
+        - goconst
+        - dupl
+        - govet
+        - errcheck
+  
+  # Maximum issues count per one linter
+  max-issues-per-linter: 0
+  
+  # Maximum count of issues with same text
+  max-same-issues: 0
+  
+  # Show all issues
+  new: false
