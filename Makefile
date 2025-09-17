@@ -60,7 +60,7 @@ coverage-text: ## Show test coverage in terminal
 check: test lint ## Quick verification (tests + linting)
 
 .PHONY: ci
-ci: clean lint test integration test-benchmarks test-reliability coverage ## Full CI simulation (all tests + quality checks)
+ci: clean lint test integration test-benchmarks coverage ## Full CI simulation (all tests + quality checks)
 	@echo "Full CI simulation complete!"
 
 .PHONY: integration
@@ -92,19 +92,11 @@ test-benchmarks: ## Run all benchmarks
 	@echo "Running all benchmarks..."
 	@$(GO) test -v -bench=. -benchmem -benchtime=1s -timeout=10m ./$(TEST_DIR)/benchmarks/...
 
-.PHONY: test-reliability
-test-reliability: ## Run reliability tests
-	@echo "Running reliability tests..."
-	@$(GO) test -v -race -timeout=10m -run TestResilience ./testing/integration/... || echo "No resilience tests found"
-	@$(GO) test -v -race -timeout=5m -run TestPanicRecovery ./testing/integration/... || echo "No panic recovery tests found"
-	@$(GO) test -v -race -timeout=10m -run TestResourceLeak ./testing/integration/... || echo "No resource leak tests found"
-	@$(GO) test -v -race -timeout=5m -run TestConcurrentModification ./testing/integration/... || echo "No concurrent modification tests found"
 
 .PHONY: test-all
-test-all: ## Run all test suites (unit + integration + reliability)
+test-all: ## Run all test suites (unit + integration)
 	@$(MAKE) test
 	@$(MAKE) integration
-	@$(MAKE) test-reliability
 	@echo "All test suites completed!"
 
 .PHONY: build

@@ -100,7 +100,6 @@ This directory contains integration tests that validate tracez behavior in reali
 - `TestCollectorShutdownUnderLoad` - Graceful shutdown with pending spans
 - `TestMultipleCollectorsCompetition` - Resource contention between collectors
 - `TestCollectorResetUnderLoad` - Reset behavior during active collection
-- `TestExportLatencyImpact` - Slow export impact on collection
 - `TestBufferGrowthPattern` - Dynamic buffer sizing under varying load
 
 **Why this matters:** Collectors must remain stable during traffic spikes and export delays.
