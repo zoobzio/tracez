@@ -24,8 +24,8 @@ func TestMockDB(t *testing.T) {
 	if err != nil {
 		t.Errorf("Query failed: %v", err)
 	}
-	if len(results) != 2 {
-		t.Errorf("Expected 2 results, got %d", len(results))
+	if len(results) != 50 {
+		t.Errorf("Expected 50 results, got %d", len(results))
 	}
 
 	// Test query count.

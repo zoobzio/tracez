@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -17,13 +18,16 @@ const HTTPRequestKey = "http.request"
 // RateLimitMiddleware enforces per-user rate limits.
 func RateLimitMiddleware(tracer *tracez.Tracer, requestsPerSecond int) func(http.Handler) http.Handler {
 	// Simple in-memory rate limiter
+	var mu sync.RWMutex
 	userRequests := make(map[string]*atomic.Int32)
 
 	// Reset counters every second
 	go func() {
 		ticker := time.NewTicker(1 * time.Second)
 		for range ticker.C {
+			mu.Lock()
 			userRequests = make(map[string]*atomic.Int32)
+			mu.Unlock()
 		}
 	}()
 
@@ -40,12 +44,22 @@ func RateLimitMiddleware(tracer *tracez.Tracer, requestsPerSecond int) func(http
 			span.SetTag("user.id", userID)
 
 			// Get or create counter for this user
-			if _, exists := userRequests[userID]; !exists {
-				userRequests[userID] = &atomic.Int32{}
+			mu.RLock()
+			counter, exists := userRequests[userID]
+			mu.RUnlock()
+			
+			if !exists {
+				mu.Lock()
+				// Double-check after acquiring write lock
+				if _, exists := userRequests[userID]; !exists {
+					userRequests[userID] = &atomic.Int32{}
+				}
+				counter = userRequests[userID]
+				mu.Unlock()
 			}
 
 			// Check rate limit
-			count := userRequests[userID].Add(1)
+			count := counter.Add(1)
 			span.SetTag("ratelimit.count", fmt.Sprintf("%d", count))
 			span.SetTag("ratelimit.limit", fmt.Sprintf("%d", requestsPerSecond))
 

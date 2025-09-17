@@ -381,7 +381,7 @@ func SimulateRealisticScenario() {
 	fmt.Println(strings.Repeat("=", 70))
 	fmt.Println("\nStory: Our team dashboard was 'working' but users complained it was slow.")
 	fmt.Println("It loads 50 team members with their recent posts and comments.")
-	fmt.Println("\nLet's see what tracez reveals...\n")
+	fmt.Println("\nLet's see what tracez reveals...")
 
 	// Setup tracer
 	tracer := tracez.New("team-dashboard")

@@ -305,7 +305,7 @@ func TestCacheReadSpans(t *testing.T) {
 	}
 }
 
-func TestThreadSafety(_ *testing.T) {
+func TestThreadSafety(t *testing.T) {
 	tracer := tracez.New("test")
 	defer tracer.Close()
 
@@ -325,6 +325,13 @@ func TestThreadSafety(_ *testing.T) {
 			})
 		}(i)
 	}
+
+	// Drain results to prevent blocking
+	go func() {
+		for i := 0; i < 10; i++ {
+			<-pool.Results()
+		}
+	}()
 
 	wg.Wait()
 	time.Sleep(100 * time.Millisecond)
