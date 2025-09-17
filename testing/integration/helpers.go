@@ -9,10 +9,28 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zoobzio/clockz"
 	"github.com/zoobzio/tracez"
 )
 
 // Package-level random source for test variability removed - unused.
+
+// Clock-aware test setup functions enable deterministic testing.
+
+// SetupTestEnvironmentWithClock creates tracer and collector with clock injection.
+// Enables deterministic timing control for reliable testing.
+func SetupTestEnvironmentWithClock(t *testing.T, clock clockz.Clock) (*tracez.Tracer, *MockCollector) {
+	tracer := tracez.New("test-service").WithClock(clock)
+	collector := NewMockCollectorWithClock(t, "test-collector", 1000, clock)
+	tracer.AddCollector("test-collector", collector.Collector)
+	return tracer, collector
+}
+
+// SetupTestEnvironment creates tracer and collector with real clock.
+// Maintains backward compatibility for existing tests.
+func SetupTestEnvironment(t *testing.T) (*tracez.Tracer, *MockCollector) {
+	return SetupTestEnvironmentWithClock(t, clockz.RealClock)
+}
 
 // MockCollector wraps a real collector with test utilities.
 // Provides synchronous collection and verification helpers.
@@ -21,19 +39,27 @@ import (
 type MockCollector struct {
 	exported []tracez.Span
 	*tracez.Collector
-	t  *testing.T
-	mu sync.Mutex
+	clock clockz.Clock
+	t     *testing.T
+	mu    sync.Mutex
 }
 
-// NewMockCollector creates a collector for testing.
-func NewMockCollector(t *testing.T, name string, bufferSize int) *MockCollector {
-	collector := tracez.NewCollector(name, bufferSize)
+// NewMockCollectorWithClock creates a collector with clock injection for testing.
+func NewMockCollectorWithClock(t *testing.T, name string, bufferSize int, clock clockz.Clock) *MockCollector {
+	collector := tracez.NewCollector(name, bufferSize).WithClock(clock)
 	collector.SetSyncMode(true) // Enable synchronous collection for testing.
 	return &MockCollector{
 		Collector: collector,
+		clock:     clock,
 		t:         t,
 		exported:  make([]tracez.Span, 0),
 	}
+}
+
+// NewMockCollector creates a collector for testing with real clock.
+// Maintains backward compatibility for existing tests.
+func NewMockCollector(t *testing.T, name string, bufferSize int) *MockCollector {
+	return NewMockCollectorWithClock(t, name, bufferSize, clockz.RealClock)
 }
 
 // Export returns collected spans and clears the buffer.
@@ -67,17 +93,18 @@ func (m *MockCollector) GetAll() []tracez.Span {
 }
 
 // WaitForSpans waits for expected number of spans with timeout.
+// Uses injected clock for deterministic testing when available.
 func (m *MockCollector) WaitForSpans(expected int, timeout time.Duration) []tracez.Span {
-	deadline := time.Now().Add(timeout)
-	ticker := time.NewTicker(10 * time.Millisecond)
-	defer ticker.Stop()
+	startTime := m.clock.Now()
+	deadline := startTime.Add(timeout)
 
-	for time.Now().Before(deadline) {
+	for m.clock.Now().Before(deadline) {
 		spans := m.Export()
 		if len(spans) >= expected {
 			return spans[:expected]
 		}
-		<-ticker.C
+		// Small delay to prevent busy waiting
+		m.clock.Sleep(10 * time.Millisecond)
 	}
 
 	// Timeout - return what we have.
@@ -206,9 +233,7 @@ func (s *TestScenario) Run(t *testing.T) {
 		tracer, collector := s.Setup()
 		if tracer == nil || collector == nil {
 			// Use defaults if not provided.
-			tracer = tracez.New("test-service")
-			collector = NewMockCollector(t, "test", 1000)
-			tracer.AddCollector("test", collector.Collector)
+			tracer, collector = SetupTestEnvironment(t)
 		}
 		defer tracer.Close()
 
@@ -216,8 +241,8 @@ func (s *TestScenario) Run(t *testing.T) {
 		ctx := context.Background()
 		s.Execute(ctx, tracer)
 
-		// Wait for collection.
-		time.Sleep(50 * time.Millisecond)
+		// Wait for collection with clock-aware timing.
+		collector.clock.Sleep(50 * time.Millisecond)
 
 		// Verify.
 		spans := collector.Export()
@@ -228,20 +253,28 @@ func (s *TestScenario) Run(t *testing.T) {
 // MockService simulates an external service for integration testing.
 type MockService struct {
 	tracer       *tracez.Tracer
+	clock        clockz.Clock
 	name         string
 	latency      time.Duration
 	mu           sync.Mutex
-	requestCount int
 	failureRate  float32
+	requestCount int
 }
 
-// NewMockService creates a simulated service.
-func NewMockService(name string, tracer *tracez.Tracer) *MockService {
+// NewMockServiceWithClock creates a simulated service with clock injection.
+func NewMockServiceWithClock(name string, tracer *tracez.Tracer, clock clockz.Clock) *MockService {
 	return &MockService{
 		name:    name,
 		latency: 10 * time.Millisecond,
 		tracer:  tracer,
+		clock:   clock,
 	}
+}
+
+// NewMockService creates a simulated service with real clock.
+// Maintains backward compatibility for existing tests.
+func NewMockService(name string, tracer *tracez.Tracer) *MockService {
+	return NewMockServiceWithClock(name, tracer, clockz.RealClock)
 }
 
 // SetLatency configures response time.
@@ -275,8 +308,8 @@ func (m *MockService) Call(ctx context.Context, operation string) error {
 	span.SetTag("operation", operation)
 	span.SetTag("request_id", fmt.Sprintf("%d", count))
 
-	// Simulate processing.
-	time.Sleep(latency)
+	// Simulate processing with injected clock.
+	m.clock.Sleep(latency)
 
 	if shouldFail {
 		span.SetTag("error", "true")

@@ -4,6 +4,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/zoobzio/clockz"
 )
 
 // Collector buffers completed spans for batch export.
@@ -17,12 +19,14 @@ type Collector struct {
 	done         chan struct{}
 	droppedCount atomic.Int64
 	name         string
+	clock        clockz.Clock
 	mu           sync.Mutex
 	closed       atomic.Bool // Track if collector is closed.
 	syncMode     bool        // Bypass channel for synchronous collection.
 }
 
 // NewCollector creates a new collector with the specified name and buffer size.
+// Uses the real clock for production behavior.
 func NewCollector(name string, bufferSize int) *Collector {
 	c := &Collector{
 		name:    name,
@@ -30,9 +34,25 @@ func NewCollector(name string, bufferSize int) *Collector {
 		spansCh: make(chan Span, bufferSize),
 		stopCh:  make(chan struct{}),
 		done:    make(chan struct{}),
+		clock:   clockz.RealClock,
 	}
 	go c.start()
 	return c
+}
+
+// WithClock returns a new collector with the specified clock.
+// Enables clock injection for deterministic testing.
+func (c *Collector) WithClock(clock clockz.Clock) *Collector {
+	newCollector := &Collector{
+		name:    c.name,
+		spans:   make([]Span, 0, 8), // Start with small capacity.
+		spansCh: make(chan Span, cap(c.spansCh)),
+		stopCh:  make(chan struct{}),
+		done:    make(chan struct{}),
+		clock:   clock,
+	}
+	go newCollector.start()
+	return newCollector
 }
 
 // start runs the collector's main loop, receiving spans from the channel.
@@ -64,7 +84,7 @@ func (c *Collector) close() {
 	select {
 	case <-c.done:
 		// Clean shutdown completed.
-	case <-time.After(100 * time.Millisecond):
+	case <-c.clock.After(100 * time.Millisecond):
 		// Timeout - log warning but continue.
 		// In production, you might want to log this.
 	}

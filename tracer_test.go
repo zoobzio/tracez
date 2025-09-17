@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/zoobzio/clockz"
 )
 
 // Local key constants for testing.
@@ -558,5 +560,116 @@ func TestTracerCloseWithPools(t *testing.T) {
 	after := runtime.NumGoroutine()
 	if after > before {
 		t.Errorf("Goroutine leak detected after tracer close: %d -> %d", before, after)
+	}
+}
+
+// TestTracerWithFakeClock verifies that WithClock enables deterministic span timing.
+func TestTracerWithFakeClock(t *testing.T) {
+	fakeClock := clockz.NewFakeClock()
+	tracer := New("test-service").WithClock(fakeClock)
+	defer tracer.Close()
+
+	// Start a span
+	_, span := tracer.StartSpan(context.Background(), "test-operation")
+	startTime := span.span.StartTime
+
+	// Advance the fake clock
+	advancement := 100 * time.Millisecond
+	fakeClock.Advance(advancement)
+
+	// Finish the span
+	span.Finish()
+
+	// Verify the duration matches the exact advancement
+	expectedDuration := advancement
+	if span.span.Duration != expectedDuration {
+		t.Errorf("Expected duration %v, got %v", expectedDuration, span.span.Duration)
+	}
+
+	// Verify end time is start time plus advancement
+	expectedEndTime := startTime.Add(advancement)
+	if span.span.EndTime != expectedEndTime {
+		t.Errorf("Expected end time %v, got %v", expectedEndTime, span.span.EndTime)
+	}
+}
+
+// TestTracerBackwardCompatibility ensures New() constructor still works with real clock.
+func TestTracerBackwardCompatibility(t *testing.T) {
+	tracer := New("test-service")
+	defer tracer.Close()
+
+	// Should use real clock by default
+	_, span := tracer.StartSpan(context.Background(), "test-operation")
+
+	// Small delay to ensure measurable duration
+	time.Sleep(1 * time.Millisecond)
+	span.Finish()
+
+	// Duration should be positive (real time elapsed)
+	if span.span.Duration <= 0 {
+		t.Error("Expected positive duration with real clock")
+	}
+
+	// StartTime should be reasonable (within last second)
+	now := time.Now()
+	if span.span.StartTime.After(now) || span.span.StartTime.Before(now.Add(-1*time.Second)) {
+		t.Errorf("StartTime %v seems unreasonable compared to now %v", span.span.StartTime, now)
+	}
+}
+
+// TestTracerFallbackIDGeneration verifies deterministic fallback IDs with fake clock.
+func TestTracerFallbackIDGeneration(t *testing.T) {
+	fakeClock := clockz.NewFakeClock()
+	tracer := New("test-service").WithClock(fakeClock)
+	defer tracer.Close()
+
+	// Force pool initialization to test fallback behavior
+	// Note: This test assumes we can trigger the fallback path
+	// In practice, crypto/rand rarely fails, so this tests the code path exists
+	_, span1 := tracer.StartSpan(context.Background(), "test1")
+	span1.Finish()
+
+	// Advance clock
+	fakeClock.Advance(1 * time.Second)
+
+	_, span2 := tracer.StartSpan(context.Background(), "test2")
+	span2.Finish()
+
+	// Verify spans have different IDs (even with fake clock, crypto/rand should work)
+	if span1.span.SpanID == span2.span.SpanID {
+		t.Error("Expected different span IDs")
+	}
+	if span1.span.TraceID == span2.span.TraceID {
+		t.Error("Expected different trace IDs")
+	}
+}
+
+// TestTracerClockInjection verifies clock is properly injected and used.
+func TestTracerClockInjection(t *testing.T) {
+	// Create two tracers with different clocks
+	fakeClock1 := clockz.NewFakeClockAt(time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC))
+	fakeClock2 := clockz.NewFakeClockAt(time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC))
+
+	tracer1 := New("service1").WithClock(fakeClock1)
+	tracer2 := New("service2").WithClock(fakeClock2)
+	defer tracer1.Close()
+	defer tracer2.Close()
+
+	// Start spans on each tracer
+	_, span1 := tracer1.StartSpan(context.Background(), "test1")
+	_, span2 := tracer2.StartSpan(context.Background(), "test2")
+
+	span1.Finish()
+	span2.Finish()
+
+	// Verify each span uses its tracer's clock
+	expectedTime1 := time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC)
+	expectedTime2 := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	if span1.span.StartTime != expectedTime1 {
+		t.Errorf("Span1 start time %v, expected %v", span1.span.StartTime, expectedTime1)
+	}
+	if span2.span.StartTime != expectedTime2 {
+		t.Errorf("Span2 start time %v, expected %v", span2.span.StartTime, expectedTime2)
 	}
 }

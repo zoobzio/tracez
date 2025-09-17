@@ -78,7 +78,7 @@ func (a *ActiveSpan) Finish() {
 		return
 	}
 
-	a.span.EndTime = time.Now()
+	a.span.EndTime = a.tracer.clock.Now()
 	a.span.Duration = a.span.EndTime.Sub(a.span.StartTime)
 
 	// Send to tracer for collection.

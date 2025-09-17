@@ -7,15 +7,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zoobzio/clockz"
 	"github.com/zoobzio/tracez"
 )
 
 // TestSpanBufferGrowth verifies memory management with large then small batches.
 func TestSpanBufferGrowth(t *testing.T) {
-	tracer := tracez.New("test-service")
-	collector := tracez.NewCollector("test", 20000) // Large buffer.
-	tracer.AddCollector("collector", collector)
+	fakeClock := clockz.NewFakeClock()
+	tracer := tracez.New("test-service").WithClock(fakeClock)
 	defer tracer.Close()
+
+	// Large buffer for this test
+	collector := tracez.NewCollector("test", 20000).WithClock(fakeClock) // Large buffer.
+	collector.SetSyncMode(true)                                          // Enable synchronous collection for deterministic testing
+	tracer.AddCollector("collector", collector)
 
 	// Phase 1: Generate many spans.
 	largeBatch := 10000
@@ -26,13 +31,12 @@ func TestSpanBufferGrowth(t *testing.T) {
 
 		// Add some data to make spans non-trivial.
 		span.SetTag("data", fmt.Sprintf("some-data-%d", i))
-		span.SetTag("timestamp", fmt.Sprintf("%d", time.Now().UnixNano()))
+		span.SetTag("timestamp", fmt.Sprintf("%d", fakeClock.Now().UnixNano()))
 
 		span.Finish()
 	}
 
-	// Let collector process.
-	time.Sleep(200 * time.Millisecond)
+	// With sync mode, collection is immediate - no waiting needed
 
 	// Export large batch.
 	phase1Spans := collector.Export()
@@ -57,8 +61,7 @@ func TestSpanBufferGrowth(t *testing.T) {
 		span.Finish()
 	}
 
-	// Let collector process.
-	time.Sleep(50 * time.Millisecond)
+	// With sync mode, collection is immediate - no waiting needed
 
 	// Export small batch.
 	phase2Spans := collector.Export()
@@ -84,10 +87,14 @@ func TestSpanBufferGrowth(t *testing.T) {
 
 // TestTagMapDeepCopy verifies exported spans are immutable.
 func TestTagMapDeepCopy(t *testing.T) {
-	tracer := tracez.New("test-service")
-	collector := tracez.NewCollector("test", 100)
-	tracer.AddCollector("collector", collector)
+	fakeClock := clockz.NewFakeClock()
+	tracer := tracez.New("test-service").WithClock(fakeClock)
 	defer tracer.Close()
+
+	// Specific buffer for this test
+	collector := tracez.NewCollector("test", 100).WithClock(fakeClock)
+	collector.SetSyncMode(true) // Enable synchronous collection for deterministic testing
+	tracer.AddCollector("collector", collector)
 
 	// Create span with tags.
 	_, span := tracer.StartSpan(context.Background(), "test-span")
@@ -108,8 +115,7 @@ func TestTagMapDeepCopy(t *testing.T) {
 
 	span.Finish()
 
-	// Wait for collection.
-	time.Sleep(50 * time.Millisecond)
+	// With sync mode, collection is immediate - no waiting needed
 
 	// Export spans.
 	export1 := collector.Export()
@@ -130,7 +136,7 @@ func TestTagMapDeepCopy(t *testing.T) {
 	span2.SetTag("separate", "true")
 	span2.Finish()
 
-	time.Sleep(50 * time.Millisecond)
+	fakeClock.Advance(50 * time.Millisecond)
 
 	// Export again.
 	_ = collector.Export()
@@ -156,10 +162,14 @@ func TestTagMapDeepCopy(t *testing.T) {
 
 // TestNilContextHandling verifies graceful handling of nil context.
 func TestNilContextHandling(t *testing.T) {
-	tracer := tracez.New("test-service")
-	collector := tracez.NewCollector("test", 100)
-	tracer.AddCollector("collector", collector)
+	fakeClock := clockz.NewFakeClock()
+	tracer := tracez.New("test-service").WithClock(fakeClock)
 	defer tracer.Close()
+
+	// Specific buffer for this test
+	collector := tracez.NewCollector("test", 100).WithClock(fakeClock)
+	collector.SetSyncMode(true) // Enable synchronous collection for deterministic testing
+	tracer.AddCollector("collector", collector)
 
 	// Try with nil context.
 	var nilCtx context.Context
@@ -197,8 +207,7 @@ func TestNilContextHandling(t *testing.T) {
 	childSpan.Finish()
 	span.Finish()
 
-	// Wait for collection.
-	time.Sleep(50 * time.Millisecond)
+	// With sync mode, collection is immediate - no waiting needed
 
 	// Verify spans collected.
 	spans := collector.Export()
@@ -228,10 +237,14 @@ func TestMemoryPressureGracefulDegradation(t *testing.T) {
 		t.Skip("Skipping memory pressure test in short mode")
 	}
 
-	tracer := tracez.New("test-service")
-	collector := tracez.NewCollector("test", 1000)
-	tracer.AddCollector("collector", collector)
+	fakeClock := clockz.NewFakeClock()
+	tracer := tracez.New("test-service").WithClock(fakeClock)
 	defer tracer.Close()
+
+	// Specific buffer for this test
+	collector := tracez.NewCollector("test", 1000).WithClock(fakeClock)
+	collector.SetSyncMode(true) // Enable synchronous collection for deterministic testing
+	tracer.AddCollector("collector", collector)
 
 	// Allocate large amount of memory to simulate pressure.
 	// This is just for testing - allocate 100MB.
@@ -264,8 +277,7 @@ func TestMemoryPressureGracefulDegradation(t *testing.T) {
 		}
 	}
 
-	// Let collector process.
-	time.Sleep(100 * time.Millisecond)
+	// With sync mode, collection is immediate - no waiting needed
 
 	// Check results.
 	collectedSpans := collector.Export()
@@ -293,7 +305,7 @@ func TestMemoryPressureGracefulDegradation(t *testing.T) {
 	recoverySpan.SetTag("post-pressure", "true")
 	recoverySpan.Finish()
 
-	time.Sleep(50 * time.Millisecond)
+	fakeClock.Advance(50 * time.Millisecond)
 
 	// Should be able to collect the recovery span.
 	finalSpans := collector.Export()
@@ -317,10 +329,14 @@ func TestTagCardinalityExplosion(t *testing.T) {
 		t.Skip("Skipping tag cardinality test in short mode")
 	}
 
-	tracer := tracez.New("test-service")
-	collector := tracez.NewCollector("test", 100)
-	tracer.AddCollector("collector", collector)
+	fakeClock := clockz.NewFakeClock()
+	tracer := tracez.New("test-service").WithClock(fakeClock)
 	defer tracer.Close()
+
+	// Specific buffer for this test
+	collector := tracez.NewCollector("test", 100).WithClock(fakeClock)
+	collector.SetSyncMode(true) // Enable synchronous collection for deterministic testing
+	tracer.AddCollector("collector", collector)
 
 	// Create span with huge number of unique tags.
 	_, span := tracer.StartSpan(context.Background(), "high-cardinality-span")
@@ -339,8 +355,7 @@ func TestTagCardinalityExplosion(t *testing.T) {
 
 	span.Finish()
 
-	// Let collector process.
-	time.Sleep(100 * time.Millisecond)
+	// With sync mode, collection is immediate - no waiting needed
 
 	// Measure memory after.
 	var memStatsAfter runtime.MemStats
@@ -373,7 +388,7 @@ func TestTagCardinalityExplosion(t *testing.T) {
 	testSpan.SetTag("normal", "true")
 	testSpan.Finish()
 
-	time.Sleep(50 * time.Millisecond)
+	fakeClock.Advance(50 * time.Millisecond)
 
 	postTestSpans := collector.Export()
 	if len(postTestSpans) != 1 {
@@ -383,10 +398,14 @@ func TestTagCardinalityExplosion(t *testing.T) {
 
 // TestPanicRecovery verifies system recovers from panics in user code.
 func TestPanicRecovery(t *testing.T) {
-	tracer := tracez.New("test-service")
-	collector := tracez.NewCollector("test", 100)
-	tracer.AddCollector("collector", collector)
+	fakeClock := clockz.NewFakeClock()
+	tracer := tracez.New("test-service").WithClock(fakeClock)
 	defer tracer.Close()
+
+	// Specific buffer for this test
+	collector := tracez.NewCollector("test", 100).WithClock(fakeClock)
+	collector.SetSyncMode(true) // Enable synchronous collection for deterministic testing
+	tracer.AddCollector("collector", collector)
 
 	// Function that panics during span creation.
 	panickyOperation := func(ctx context.Context) {
@@ -401,10 +420,6 @@ func TestPanicRecovery(t *testing.T) {
 
 		// Simulate panic in user code.
 		panic("simulated panic")
-
-		// This won't execute.
-		span.SetTag("after-panic", "true")
-		span.Finish()
 	}
 
 	// Run panicky operation.
@@ -416,8 +431,7 @@ func TestPanicRecovery(t *testing.T) {
 	normalSpan.SetTag("post-panic", "true")
 	normalSpan.Finish()
 
-	// Wait for collection.
-	time.Sleep(50 * time.Millisecond)
+	// With sync mode, collection is immediate - no waiting needed
 
 	// Check collected spans.
 	spans := collector.Export()
@@ -449,10 +463,14 @@ func TestPanicRecovery(t *testing.T) {
 
 // TestCollectorResetCleanup verifies Reset() properly cleans up resources.
 func TestCollectorResetCleanup(t *testing.T) {
-	tracer := tracez.New("test-service")
-	collector := tracez.NewCollector("test", 1000)
-	tracer.AddCollector("collector", collector)
+	fakeClock := clockz.NewFakeClock()
+	tracer := tracez.New("test-service").WithClock(fakeClock)
 	defer tracer.Close()
+
+	// Specific buffer for this test
+	collector := tracez.NewCollector("test", 1000).WithClock(fakeClock)
+	collector.SetSyncMode(true) // Enable synchronous collection for deterministic testing
+	tracer.AddCollector("collector", collector)
 
 	// Generate initial spans.
 	for i := 0; i < 100; i++ {
@@ -462,8 +480,7 @@ func TestCollectorResetCleanup(t *testing.T) {
 		span.Finish()
 	}
 
-	// Wait for collection.
-	time.Sleep(50 * time.Millisecond)
+	// With sync mode, collection is immediate - no waiting needed
 
 	// Check initial state.
 	initialSpans := collector.Export()
@@ -495,8 +512,7 @@ func TestCollectorResetCleanup(t *testing.T) {
 		span.Finish()
 	}
 
-	// Wait for collection.
-	time.Sleep(50 * time.Millisecond)
+	// With sync mode, collection is immediate - no waiting needed
 
 	// Check new spans collected properly.
 	newSpans := collector.Export()

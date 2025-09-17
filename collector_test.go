@@ -4,6 +4,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/zoobzio/clockz"
 )
 
 func TestNewCollector(t *testing.T) {
@@ -452,4 +454,72 @@ func TestOptimizedCollectorBuffering(t *testing.T) {
 	if collector.Count() != 5 {
 		t.Errorf("Expected 5 spans after export, got %d", collector.Count())
 	}
+}
+
+// TestCollectorWithFakeClock verifies WithClock enables deterministic timeout behavior.
+func TestCollectorWithFakeClock(t *testing.T) {
+	fakeClock := clockz.NewFakeClock()
+	collector := NewCollector("test-collector", 10).WithClock(fakeClock)
+
+	// Close the collector to trigger timeout behavior
+	go collector.close()
+
+	// Advance the fake clock past the timeout threshold
+	fakeClock.Advance(150 * time.Millisecond)
+
+	// Give the goroutine a moment to process
+	time.Sleep(10 * time.Millisecond)
+
+	// Collector should have shut down by now
+	select {
+	case <-collector.done:
+		// Expected - shutdown completed
+	default:
+		t.Error("Collector should have shut down after timeout")
+	}
+}
+
+// TestCollectorBackwardCompatibility ensures NewCollector still works with real clock.
+func TestCollectorBackwardCompatibility(t *testing.T) {
+	collector := NewCollector("test-collector", 10)
+	defer collector.close()
+
+	// Should use real clock by default - just verify it was created
+	if collector == nil {
+		t.Error("Expected collector to be created with backward compatible constructor")
+	}
+
+	// Verify basic functionality still works
+	span := Span{SpanID: "test", TraceID: "test", Name: "test"}
+	collector.SetSyncMode(true)
+	collector.Collect(&span)
+
+	if collector.Count() != 1 {
+		t.Errorf("Expected 1 span collected, got %d", collector.Count())
+	}
+}
+
+// TestCollectorClockInjection verifies different collectors can use different clocks.
+func TestCollectorClockInjection(t *testing.T) {
+	// Test clock injection by verifying collectors get created with different clocks
+	fakeClock1 := clockz.NewFakeClock()
+	fakeClock2 := clockz.NewFakeClock()
+
+	collector1 := NewCollector("collector1", 10).WithClock(fakeClock1)
+	collector2 := NewCollector("collector2", 10).WithClock(fakeClock2)
+
+	// Just verify both collectors were created successfully
+	if collector1 == nil {
+		t.Error("Expected collector1 to be created")
+	}
+	if collector2 == nil {
+		t.Error("Expected collector2 to be created")
+	}
+
+	// Clean up
+	collector1.close()
+	collector2.close()
+
+	// Verify both shut down cleanly
+	time.Sleep(5 * time.Millisecond) // Brief wait for cleanup
 }

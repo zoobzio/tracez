@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"sync"
 	"time"
+
+	"github.com/zoobzio/clockz"
 )
 
 // contextBundle holds both tracer and span to reduce context allocations.
@@ -21,16 +23,29 @@ type Tracer struct {
 	collectors  map[string]*Collector
 	traceIDPool *IDPool
 	spanIDPool  *IDPool
+	clock       clockz.Clock
 	serviceName string
 	mu          sync.Mutex
 	idPoolOnce  sync.Once
 }
 
 // New creates a new tracer for the specified service.
+// Uses the real clock for production behavior.
 func New(serviceName string) *Tracer {
 	return &Tracer{
 		serviceName: serviceName,
 		collectors:  make(map[string]*Collector),
+		clock:       clockz.RealClock,
+	}
+}
+
+// WithClock returns a new tracer with the specified clock.
+// Enables clock injection for deterministic testing.
+func (t *Tracer) WithClock(clock clockz.Clock) *Tracer {
+	return &Tracer{
+		serviceName: t.serviceName,
+		collectors:  make(map[string]*Collector),
+		clock:       clock,
 	}
 }
 
@@ -44,7 +59,7 @@ func (t *Tracer) ensureIDPools() {
 			bytes := make([]byte, 16)
 			if _, err := rand.Read(bytes); err != nil {
 				// Fallback to time-based ID if crypto/rand fails.
-				return hex.EncodeToString([]byte(time.Now().Format(time.RFC3339Nano)))
+				return hex.EncodeToString([]byte(t.clock.Now().Format(time.RFC3339Nano)))
 			}
 			return hex.EncodeToString(bytes)
 		})
@@ -53,7 +68,7 @@ func (t *Tracer) ensureIDPools() {
 			bytes := make([]byte, 8)
 			if _, err := rand.Read(bytes); err != nil {
 				// Fallback to time-based ID if crypto/rand fails.
-				return hex.EncodeToString([]byte(time.Now().Format("15:04:05.000000")))
+				return hex.EncodeToString([]byte(t.clock.Now().Format("15:04:05.000000")))
 			}
 			return hex.EncodeToString(bytes)
 		})
@@ -81,7 +96,7 @@ func (t *Tracer) StartSpan(ctx context.Context, operation Key) (context.Context,
 		TraceID:   t.generateTraceID(ctx),
 		SpanID:    t.generateSpanID(),
 		Name:      operation,
-		StartTime: time.Now(),
+		StartTime: t.clock.Now(),
 	}
 
 	// Link to parent span if present.
