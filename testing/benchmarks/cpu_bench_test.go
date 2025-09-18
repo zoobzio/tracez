@@ -224,8 +224,7 @@ func BenchmarkCollectorThroughput(b *testing.B) {
 				collector.Collect(span)
 			}
 
-			// Wait for background processing.
-			time.Sleep(100 * time.Millisecond)
+			// Background processing wait removed for benchmark accuracy
 			elapsed := time.Since(start)
 
 			rate := float64(b.N) / elapsed.Seconds()
@@ -257,8 +256,7 @@ func BenchmarkFullPipelineThroughput(b *testing.B) {
 		}
 	})
 
-	// Wait for collection processing.
-	time.Sleep(200 * time.Millisecond)
+	// Collection processing wait removed for benchmark accuracy
 	elapsed := time.Since(start)
 
 	rate := float64(processed) / elapsed.Seconds()

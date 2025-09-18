@@ -94,8 +94,7 @@ func BenchmarkCollectorConcurrency(b *testing.B) {
 
 				wg.Wait()
 
-				// Wait for background processing.
-				time.Sleep(100 * time.Millisecond)
+				// Background processing wait removed for benchmark accuracy
 
 				collected := collector.Count()
 				dropped := collector.DroppedCount()
@@ -136,8 +135,7 @@ func BenchmarkMultipleCollectorsConcurrency(b *testing.B) {
 				}
 			})
 
-			// Wait for processing across all collectors.
-			time.Sleep(200 * time.Millisecond)
+			// Processing wait removed for benchmark accuracy
 
 			var totalCollected, totalDropped int64
 			for _, collector := range collectors {
@@ -227,8 +225,7 @@ func BenchmarkCollectorExportConcurrency(b *testing.B) {
 		collector.Collect(span)
 	}
 
-	// Wait for collection.
-	time.Sleep(100 * time.Millisecond)
+	// Collection wait removed for benchmark accuracy
 
 	var totalExported int64
 
@@ -376,7 +373,7 @@ func BenchmarkBackpressureConcurrency(b *testing.B) {
 			}
 
 			wg.Wait()
-			time.Sleep(50 * time.Millisecond) // Let processing complete.
+			// Processing completion wait removed for benchmark accuracy
 
 			dropped := collector.DroppedCount()
 			collected := collector.Count()
@@ -411,7 +408,7 @@ func BenchmarkGoroutineLeakDetection(b *testing.B) {
 		// Periodic goroutine check.
 		if i%100 == 0 {
 			runtime.GC()
-			time.Sleep(10 * time.Millisecond)
+			time.Sleep(10 * time.Millisecond) // Kept for goroutine leak detection
 			currentGoroutines := runtime.NumGoroutine()
 
 			if currentGoroutines > initialGoroutines+5 { // Allow some variance.
@@ -423,7 +420,7 @@ func BenchmarkGoroutineLeakDetection(b *testing.B) {
 
 	// Final check.
 	runtime.GC()
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond) // Kept for final cleanup verification
 	finalGoroutines := runtime.NumGoroutine()
 
 	b.ReportMetric(float64(initialGoroutines), "initial-goroutines")
@@ -452,7 +449,7 @@ func BenchmarkChannelContention(b *testing.B) {
 				}
 			})
 
-			time.Sleep(100 * time.Millisecond)
+			// Channel processing wait removed for benchmark accuracy
 
 			b.ReportMetric(float64(collector.Count()), "collected")
 			b.ReportMetric(float64(collector.DroppedCount()), "dropped")

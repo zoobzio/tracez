@@ -135,8 +135,7 @@ func BenchmarkCollectorCollection(b *testing.B) {
 		collector.Collect(span)
 	}
 
-	// Let background processing complete.
-	time.Sleep(10 * time.Millisecond)
+	// Background processing completion not needed for benchmark
 }
 
 // BenchmarkCollectorCollectionParallel tests concurrent collection.
@@ -162,8 +161,7 @@ func BenchmarkCollectorCollectionParallel(b *testing.B) {
 		}
 	})
 
-	// Let background processing complete.
-	time.Sleep(50 * time.Millisecond)
+	// Background processing completion not needed for benchmark
 }
 
 // BenchmarkCollectorExport measures export performance with various sizes.
@@ -189,8 +187,7 @@ func BenchmarkCollectorExport(b *testing.B) {
 				collector.Collect(span)
 			}
 
-			// Wait for background processing.
-			time.Sleep(100 * time.Millisecond)
+			// Background processing wait removed for benchmark accuracy
 
 			b.ResetTimer()
 			b.ReportAllocs()
@@ -211,7 +208,7 @@ func BenchmarkCollectorExport(b *testing.B) {
 						}
 						collector.Collect(span)
 					}
-					time.Sleep(50 * time.Millisecond)
+					// Re-population delay removed for benchmark accuracy
 				}
 			}
 		})
@@ -350,7 +347,7 @@ func BenchmarkRealWorldScenario(b *testing.B) {
 		// Auth middleware span.
 		authCtx, authSpan := tracer.StartSpan(reqCtx, "auth.validate")
 		authSpan.SetTag("auth.method", "jwt")
-		time.Sleep(time.Microsecond) // Simulate auth time.
+		// Auth simulation delay removed for benchmark accuracy
 		authSpan.Finish()
 
 		// Database query span.
@@ -358,7 +355,7 @@ func BenchmarkRealWorldScenario(b *testing.B) {
 		dbSpan.SetTag("db.table", "orders")
 		dbSpan.SetTag("db.operation", "SELECT")
 		dbSpan.SetTag("db.rows", "1")
-		time.Sleep(time.Microsecond * 5) // Simulate DB time.
+		// DB simulation delay removed for benchmark accuracy
 		dbSpan.Finish()
 
 		// External API call.

@@ -52,7 +52,7 @@ func BenchmarkWebServerScenario(b *testing.B) {
 		// Auth middleware (always present).
 		authCtx, authSpan := tracer.StartSpan(reqCtx, "auth.validate")
 		authSpan.SetTag("auth.method", "jwt")
-		time.Sleep(time.Nanosecond * 50) // Minimal auth time.
+		// Auth simulation delay removed for benchmark accuracy
 		authSpan.Finish()
 
 		// Database calls.
@@ -60,7 +60,7 @@ func BenchmarkWebServerScenario(b *testing.B) {
 			_, dbSpan := tracer.StartSpan(authCtx, "db.query")
 			dbSpan.SetTag("db.table", []string{"users", "orders", "products"}[rand.Intn(3)])
 			dbSpan.SetTag("db.operation", []string{"SELECT", "INSERT", "UPDATE"}[rand.Intn(3)])
-			time.Sleep(time.Nanosecond * time.Duration(100+rand.Intn(500))) // DB latency.
+			// DB latency simulation removed for benchmark accuracy
 			dbSpan.Finish()
 		}
 
@@ -68,7 +68,7 @@ func BenchmarkWebServerScenario(b *testing.B) {
 		for j := 0; j < reqType.apiCalls; j++ {
 			_, apiSpan := tracer.StartSpan(authCtx, "external.api")
 			apiSpan.SetTag("api.service", []string{"payment", "notification", "inventory"}[rand.Intn(3)])
-			time.Sleep(time.Nanosecond * time.Duration(200+rand.Intn(1000))) // API latency.
+			// API latency simulation removed for benchmark accuracy
 			apiSpan.Finish()
 		}
 
@@ -104,7 +104,7 @@ func BenchmarkMicroserviceScenario(b *testing.B) {
 		authCtx, authSpan := tracer.StartSpan(gatewayCtx, "service.auth")
 		authSpan.SetTag("service.name", "auth-service")
 		authSpan.SetTag("operation", "validate_token")
-		time.Sleep(time.Nanosecond * time.Duration(50+rand.Intn(100)))
+		// Auth service delay removed for benchmark accuracy
 		authSpan.Finish()
 
 		// User service call.
@@ -116,7 +116,7 @@ func BenchmarkMicroserviceScenario(b *testing.B) {
 		_, userDBSpan := tracer.StartSpan(userCtx, "db.user")
 		userDBSpan.SetTag("db.table", "users")
 		userDBSpan.SetTag("db.query", "SELECT")
-		time.Sleep(time.Nanosecond * time.Duration(80+rand.Intn(200)))
+		// User DB delay removed for benchmark accuracy
 		userDBSpan.Finish()
 
 		userSpan.Finish()
@@ -130,7 +130,7 @@ func BenchmarkMicroserviceScenario(b *testing.B) {
 		_, orderDBSpan := tracer.StartSpan(orderCtx, "db.orders")
 		orderDBSpan.SetTag("db.table", "orders")
 		orderDBSpan.SetTag("db.query", "SELECT")
-		time.Sleep(time.Nanosecond * time.Duration(120+rand.Intn(300)))
+		// Order DB delay removed for benchmark accuracy
 		orderDBSpan.Finish()
 
 		orderSpan.Finish()
@@ -190,14 +190,7 @@ func BenchmarkDatabaseQueryScenario(b *testing.B) {
 			querySpan.SetTag("query.index", fmt.Sprintf("%d", j))
 			querySpan.SetTag("query.indexed", fmt.Sprintf("%v", pattern.hasIndex))
 
-			// Simulate query execution time based on whether it's indexed.
-			var queryTime time.Duration
-			if pattern.hasIndex {
-				queryTime = time.Nanosecond * time.Duration(100+rand.Intn(200))
-			} else {
-				queryTime = time.Nanosecond * time.Duration(500+rand.Intn(1000))
-			}
-			time.Sleep(queryTime)
+			// Query time simulation removed for benchmark accuracy
 
 			if !pattern.hasIndex {
 				querySpan.SetTag("query.slow", "true")
@@ -268,21 +261,21 @@ func BenchmarkWorkerPoolScenario(b *testing.B) {
 				if jobType.cpuIntensive {
 					_, cpuSpan := tracer.StartSpan(workerCtx, "job.cpu_process")
 					cpuSpan.SetTag("cpu.cores", fmt.Sprintf("%d", runtime.GOMAXPROCS(0)))
-					time.Sleep(jobType.duration)
+					// CPU process simulation removed for benchmark accuracy
 					cpuSpan.Finish()
 				}
 
 				if jobType.ioIntensive {
 					_, ioSpan := tracer.StartSpan(workerCtx, "job.io_process")
 					ioSpan.SetTag("io.type", "network")
-					time.Sleep(jobType.duration)
+					// IO process simulation removed for benchmark accuracy
 					ioSpan.Finish()
 				}
 
 				// Completion tracking.
 				_, trackSpan := tracer.StartSpan(workerCtx, "job.tracking")
 				trackSpan.SetTag("status", "completed")
-				time.Sleep(time.Nanosecond * 50)
+				// Tracking delay removed for benchmark accuracy
 				trackSpan.Finish()
 
 				workerSpan.SetTag("job.status", "completed")
@@ -322,13 +315,13 @@ func BenchmarkStreamingScenario(b *testing.B) {
 		// Validation.
 		validCtx, validSpan := tracer.StartSpan(eventCtx, "stream.validate")
 		validSpan.SetTag("validation.rules", "3")
-		time.Sleep(time.Nanosecond * 20)
+		// Validation delay removed for benchmark accuracy
 		validSpan.Finish()
 
 		// Enrichment.
 		enrichCtx, enrichSpan := tracer.StartSpan(validCtx, "stream.enrich")
 		enrichSpan.SetTag("enrichment.sources", "2")
-		time.Sleep(time.Nanosecond * 50)
+		// Enrichment delay removed for benchmark accuracy
 		enrichSpan.Finish()
 
 		// Multiple downstream processors.
@@ -336,7 +329,7 @@ func BenchmarkStreamingScenario(b *testing.B) {
 			_, procSpan := tracer.StartSpan(enrichCtx, fmt.Sprintf("stream.process_%d", procID))
 			procSpan.SetTag("processor.id", fmt.Sprintf("%d", procID))
 			procSpan.SetTag("processor.type", []string{"analytics", "alerting", "storage"}[procID])
-			time.Sleep(time.Nanosecond * time.Duration(30+rand.Intn(70)))
+			// Processor delay removed for benchmark accuracy
 			procSpan.Finish()
 		}
 
@@ -378,7 +371,7 @@ func BenchmarkErrorScenario(b *testing.B) {
 			errSpan.SetTag("error.type", []string{"timeout", "connection", "validation"}[rand.Intn(3)])
 			errSpan.SetTag("error.code", []string{"500", "502", "400"}[rand.Intn(3)])
 			errSpan.SetTag("error.message", "Operation failed")
-			time.Sleep(time.Nanosecond * time.Duration(100+rand.Intn(500))) // Error delays.
+			// Error delay simulation removed for benchmark accuracy
 			errSpan.Finish()
 
 			// Retry logic.
@@ -388,11 +381,11 @@ func BenchmarkErrorScenario(b *testing.B) {
 			// Some retries succeed.
 			if rand.Intn(2) == 0 {
 				retrySpan.SetTag("retry.result", "success")
-				time.Sleep(time.Nanosecond * 200)
+				// Retry success delay removed for benchmark accuracy
 			} else {
 				retrySpan.SetTag("retry.result", "failed")
 				retrySpan.SetTag("error.final", "true")
-				time.Sleep(time.Nanosecond * 50)
+				// Retry failure delay removed for benchmark accuracy
 			}
 			retrySpan.Finish()
 
@@ -401,7 +394,7 @@ func BenchmarkErrorScenario(b *testing.B) {
 			// Successful operation.
 			_, successSpan := tracer.StartSpan(reqCtx, "service.operation")
 			successSpan.SetTag("operation.result", "success")
-			time.Sleep(time.Nanosecond * time.Duration(50+rand.Intn(150)))
+			// Success operation delay removed for benchmark accuracy
 			successSpan.Finish()
 
 			reqSpan.SetTag("request.status", "success")

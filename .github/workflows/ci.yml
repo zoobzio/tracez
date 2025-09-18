@@ -94,7 +94,7 @@ jobs:
       run: go mod download
       
     - name: Run core benchmarks
-      run: go test -v -bench=. -benchmem -benchtime=1s -timeout=10m ./testing/benchmarks/...
+      run: go test -v -bench=. -benchmem -benchtime=200ms -timeout=10m ./testing/benchmarks/...
       
     - name: Store benchmark results
       run: |

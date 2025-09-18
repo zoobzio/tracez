@@ -338,7 +338,6 @@ func TestCollectorRemovalDuringCollection(t *testing.T) {
 	// Would need synchronous collector management or deterministic scheduling to fix.
 }
 
-
 // TestBufferGrowthPattern verifies memory management in collector.
 func TestBufferGrowthPattern(t *testing.T) {
 	tracer := tracez.New("test-service")
