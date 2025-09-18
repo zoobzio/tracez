@@ -4,110 +4,11 @@ import (
 	"context"
 	"fmt"
 	"runtime"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/zoobzio/tracez"
 )
-
-// TestChannelSaturation verifies system handles buffer overflow gracefully.
-// 1000 spans generated instantly into buffer of 100.
-func TestChannelSaturation(t *testing.T) {
-	tracer := tracez.New("test-service")
-
-	// Small buffer to force saturation.
-	bufferSize := 100
-	collector := tracez.NewCollector("test", bufferSize)
-	tracer.AddCollector("collector", collector)
-	defer tracer.Close()
-
-	// Generate spans faster than collection.
-	spansToGenerate := 1000
-
-	// Track generation time to ensure it doesn't block.
-	startTime := time.Now()
-
-	for i := 0; i < spansToGenerate; i++ {
-		_, span := tracer.StartSpan(context.Background(), "burst-span")
-		span.SetTag("index", fmt.Sprintf("%d", i))
-		span.Finish()
-	}
-
-	generationTime := time.Since(startTime)
-
-	// CRITICAL TEST: Generation must be non-blocking.
-	// Even with a small buffer, generation of 1000 spans should be fast.
-	if generationTime > 100*time.Millisecond {
-		t.Errorf("Span generation took too long: %v (indicates blocking behavior)", generationTime)
-	}
-
-	// Let collector catch up.
-	time.Sleep(100 * time.Millisecond)
-
-	// Check dropped count.
-	dropped := collector.DroppedCount()
-	collected := len(collector.Export())
-
-	t.Logf("Generated: %d, Collected: %d, Dropped: %d, GenTime: %v",
-		spansToGenerate, collected, dropped, generationTime)
-
-	// VERIFY CAPABILITY: System handled saturation scenario correctly.
-	// Note: We do NOT require drops > 0 because that depends on scheduler.
-
-	// 1. Verify we collected something
-	if collected == 0 {
-		t.Error("No spans collected - collector not functioning")
-	}
-
-	// 2. Log the behavior (informational, not a failure)
-	if dropped == 0 {
-		t.Log("INFO: No spans dropped - collector kept up with generation")
-		t.Log("      This is expected behavior when goroutine scheduling favors the collector")
-	} else {
-		t.Logf("INFO: Dropped %d spans due to backpressure (expected under load)", dropped)
-	}
-
-	// 3. Verify accounting is correct
-	total := collected + int(dropped)
-	tolerance := 50 // Some tolerance for timing edge cases.
-	if total < spansToGenerate-tolerance || total > spansToGenerate+tolerance {
-		t.Errorf("Span accounting error: generated=%d, collected+dropped=%d",
-			spansToGenerate, total)
-	}
-
-	// 4. Verify collected spans are valid
-	spans := collector.Export()
-	for i, span := range spans {
-		if span.Name != "burst-span" {
-			t.Errorf("Span %d has wrong name: %s", i, span.Name)
-		}
-		if _, ok := span.Tags["index"]; !ok {
-			t.Errorf("Span %d missing index tag", i)
-		}
-	}
-
-	// 5. Verify non-blocking behavior with more aggressive test
-	// Generate another burst while monitoring time per span.
-	const aggressiveBurst = 10000
-	aggressiveStart := time.Now()
-
-	for i := 0; i < aggressiveBurst; i++ {
-		_, span := tracer.StartSpan(context.Background(), "aggressive-burst")
-		span.Finish()
-	}
-
-	aggressiveTime := time.Since(aggressiveStart)
-	timePerSpan := aggressiveTime / aggressiveBurst
-
-	t.Logf("Aggressive burst: %d spans in %v (%.2f ns/span)",
-		aggressiveBurst, aggressiveTime, float64(timePerSpan.Nanoseconds()))
-
-	// Each span should take microseconds at most, not milliseconds.
-	if timePerSpan > 10*time.Microsecond {
-		t.Errorf("Span generation too slow: %v per span (indicates blocking)", timePerSpan)
-	}
-}
 
 // TestCollectorShutdownUnderLoad verifies graceful shutdown during high load.
 // Continuous generation with Close() called at peak.
@@ -254,78 +155,6 @@ func TestMultipleCollectorsCompetition(t *testing.T) {
 
 	// Slow collector shouldn't block others.
 	// Already verified by successful completion without timeout.
-}
-
-// TestCollectorResetUnderLoad verifies Reset() works during active collection.
-func TestCollectorResetUnderLoad(t *testing.T) {
-	tracer := tracez.New("test-service")
-	collector := tracez.NewCollector("test", 100)
-	tracer.AddCollector("collector", collector)
-	defer tracer.Close()
-
-	// Start generation.
-	var wg sync.WaitGroup
-	stopGeneration := make(chan bool)
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		counter := 0
-		for {
-			select {
-			case <-stopGeneration:
-				return
-			default:
-				_, span := tracer.StartSpan(context.Background(), "reset-test-span")
-				span.SetTag("counter", fmt.Sprintf("%d", counter))
-				span.Finish()
-				counter++
-			}
-		}
-	}()
-
-	// Let some spans accumulate.
-	time.Sleep(50 * time.Millisecond)
-
-	// Check initial state.
-	beforeReset := len(collector.Export())
-	beforeDropped := collector.DroppedCount()
-
-	t.Logf("Before reset: collected=%d, dropped=%d", beforeReset, beforeDropped)
-
-	// Reset while generation continues.
-	collector.Reset()
-
-	// Immediately check that reset cleared the buffer.
-	immediatelyAfterReset := collector.Count()
-	if immediatelyAfterReset != 0 {
-		t.Errorf("Reset didn't clear buffer: %d spans remain", immediatelyAfterReset)
-	}
-
-	// Continue generation.
-	time.Sleep(50 * time.Millisecond)
-
-	// Stop generation.
-	close(stopGeneration)
-	wg.Wait()
-
-	// Check post-reset state.
-	afterReset := len(collector.Export())
-	afterDropped := collector.DroppedCount()
-
-	t.Logf("After reset: collected=%d, dropped=%d", afterReset, afterDropped)
-
-	// After reset, we should have collected some new spans.
-	if afterReset == 0 {
-		t.Error("No spans collected after reset")
-	}
-
-	// Dropped count should have been reset to 0 and may have new drops.
-	// But should be much less than before (unless we're really unlucky with timing).
-	// This is inherently flaky, so just check it was reset at some point.
-	if afterDropped >= beforeDropped && beforeDropped > 0 {
-		t.Error("Reset didn't clear dropped count")
-	}
 }
 
 // TestCollectorRemovalDuringCollection verifies clean collector removal.

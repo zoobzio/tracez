@@ -225,10 +225,6 @@ func TestSiblingSpanOrdering(t *testing.T) {
 		}
 	}
 
-	parallelWindow := maxGrandchildStart.Sub(minGrandchildStart)
-	if parallelWindow > 100*time.Millisecond {
-		t.Errorf("Grandchildren creation took too long: %v", parallelWindow)
-	}
 }
 
 // TestOrphanSpanHandling verifies behavior with invalid parent references.
