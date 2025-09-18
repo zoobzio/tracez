@@ -3,19 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v*.*.*'  # Keep existing trigger
-  workflow_dispatch:
-    inputs:
-      version_override:
-        description: 'Version override (leave empty for auto)'
-        required: false
-        type: string
-        default: ''
-      dry_run:
-        description: 'Dry run mode'
-        required: false
-        type: boolean
-        default: false
+      - 'v*.*.*'
 
 concurrency:
   group: release-${{ github.ref }}
@@ -27,91 +15,9 @@ permissions:
   id-token: write  # Required for signing
 
 jobs:
-  # Version determination for manual triggers
-  determine-version:
-    name: Determine Version
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-      should_create_tag: ${{ steps.decision.outputs.create }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      
-      - name: Install svu
-        run: |
-          export GOPATH=$HOME/go
-          go install github.com/caarlos0/svu@v1.12.0
-          echo "$HOME/go/bin" >> $GITHUB_PATH
-      
-      - name: Determine version
-        id: version
-        run: |
-          if [ -n "${{ github.event.inputs.version_override }}" ]; then
-            VERSION="${{ github.event.inputs.version_override }}"
-            echo "Using override: $VERSION"
-          else
-            VERSION=$(svu next)
-            echo "Auto-inferred: $VERSION"
-          fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-      
-      - name: Check tag existence
-        id: check
-        run: |
-          if gh api repos/${{ github.repository }}/git/refs/tags/${{ steps.version.outputs.version }} >/dev/null 2>&1; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-          fi
-        env:
-          GH_TOKEN: ${{ github.token }}
-      
-      - name: Decision point
-        id: decision
-        run: |
-          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
-            echo "🔍 DRY RUN - No tag will be created"
-            echo "create=false" >> $GITHUB_OUTPUT
-          elif [ "${{ steps.check.outputs.exists }}" = "true" ]; then
-            echo "❌ Tag already exists"
-            echo "create=false" >> $GITHUB_OUTPUT
-            exit 1
-          else
-            echo "✅ Will create tag"
-            echo "create=true" >> $GITHUB_OUTPUT
-          fi
-      
-      - name: Create tag via API
-        if: steps.decision.outputs.create == 'true'
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          
-          # Create lightweight tag using GitHub API
-          gh api repos/${{ github.repository }}/git/refs \
-            --method POST \
-            --field ref="refs/tags/$VERSION" \
-            --field sha="${{ github.sha }}" \
-            || (echo "Failed to create tag" && exit 1)
-          
-          echo "✅ Created tag: $VERSION"
-        env:
-          GH_TOKEN: ${{ github.token }}
-      
-      - name: Summary
-        run: |
-          echo "## 📋 Release Automation Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Version:** ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Dry Run:** ${{ github.event.inputs.dry_run }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Tag Created:** ${{ steps.decision.outputs.create }}" >> $GITHUB_STEP_SUMMARY
-
-  # Validate the module for tag pushes
-  validate-tag:
-    name: Validate Module (Tag)
-    if: github.event_name == 'push'
+  # Validate the module
+  validate:
+    name: Validate Module
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -141,63 +47,16 @@ jobs:
       - name: Test examples
         run: |
           for dir in examples/*/; do
-            if [ -f "$dir/main.go" ]; then
+            if [ -f "$dir/go.mod" ]; then
               echo "Testing $dir"
-              (cd "$dir" && go test -v -race ./... || true)
+              (cd "$dir" && go test -v -race ./...)
             fi
           done
 
-  # Validate the module for manual dispatch
-  validate-manual:
-    name: Validate Module (Manual)
-    if: github.event_name == 'workflow_dispatch' && needs.determine-version.outputs.should_create_tag == 'true'
-    needs: 
-      - determine-version
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Required for changelog generation
-      
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.23'
-      
-      - name: Validate go.mod
-        run: |
-          go mod tidy
-          git diff --exit-code go.mod go.sum || (echo "go.mod/go.sum need updating" && exit 1)
-      
-      - name: Run tests
-        run: |
-          go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
-      
-      - name: Run linting
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: v1.64.8
-          args: --config=.golangci.yml --timeout=5m
-      
-      - name: Test examples
-        run: |
-          for dir in examples/*/; do
-            if [ -f "$dir/main.go" ]; then
-              echo "Testing $dir"
-              (cd "$dir" && go test -v -race ./... || true)
-            fi
-          done
-
-  # Create the release using GoReleaser
+  # Create release when tag is pushed
   release:
     name: Create Release
-    # Run after either validation job completes successfully
-    needs: 
-      - validate-tag
-      - validate-manual
-    if: |
-      (github.event_name == 'push' && needs.validate-tag.result == 'success') ||
-      (github.event_name == 'workflow_dispatch' && needs.validate-manual.result == 'success')
+    needs: validate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -227,10 +86,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: release-artifacts
-          path: dist/
+          path: .dist/
           retention-days: 7
 
-  # Verify the release was created successfully
+  # Verify release creation
   verify:
     name: Verify Release
     needs: release
@@ -275,7 +134,7 @@ jobs:
           echo "#### Release Notes" >> $GITHUB_STEP_SUMMARY
           echo "View the full release notes at: https://github.com/zoobzio/tracez/releases/tag/${{ steps.version.outputs.VERSION }}" >> $GITHUB_STEP_SUMMARY
 
-  # Optional: Notify about the release
+  # Notify about release
   notify:
     name: Notify Release
     needs: verify

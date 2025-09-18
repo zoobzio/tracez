@@ -6,6 +6,9 @@ version: 2
 # Set project name
 project_name: tracez
 
+# Output directory
+dist: .dist
+
 # Build configuration
 builds:
   # Skip building binaries for the main library since it's a library package
