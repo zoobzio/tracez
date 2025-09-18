@@ -22,8 +22,11 @@ func TestIDPoolBasicOperation(t *testing.T) {
 
 // TestIDPoolEmpty tests behavior when pool is empty.
 func TestIDPoolEmpty(t *testing.T) {
-	callCount := 0
+	var callCount int
+	var mu sync.Mutex
 	factory := func() string {
+		mu.Lock()
+		defer mu.Unlock()
 		callCount++
 		return "direct-id"
 	}
@@ -39,8 +42,11 @@ func TestIDPoolEmpty(t *testing.T) {
 	}
 
 	// Should have called factory multiple times (pool + direct).
-	if callCount < 2 {
-		t.Errorf("Expected factory to be called multiple times, got %d", callCount)
+	mu.Lock()
+	finalCount := callCount
+	mu.Unlock()
+	if finalCount < 2 {
+		t.Errorf("Expected factory to be called multiple times, got %d", finalCount)
 	}
 
 	for _, id := range ids {
