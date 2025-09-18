@@ -9,33 +9,50 @@
 [![Go Version](https://img.shields.io/github/go-mod/go-version/zoobzio/tracez)](go.mod)
 [![Release](https://img.shields.io/github/v/release/zoobzio/tracez)](https://github.com/zoobzio/tracez/releases)
 
-A minimal, primitive distributed tracing library for Go applications.
+A minimal span collection library for Go applications - a building block for observability systems.
 
-## Overview
+## What tracez Actually Is
 
-tracez focuses on span collection and export without the complexity of full OpenTelemetry. It's designed for systems that need basic distributed tracing with predictable performance and resource usage.
+tracez collects spans within your Go application for local performance analysis or export to APM systems. It's a **primitive** - the foundation you build observability on, not a complete tracing solution.
 
-**When to use tracez:**
-- OpenTelemetry feels like overkill for your needs
-- You want predictable performance (1.84M+ spans/sec single-threaded, 3.92M+ parallel)  
-- Zero external dependencies matter
-- You need thread-safety without complexity
-- Backpressure protection is essential
+**What span collection enables:**
+- Feed APM systems (Datadog, New Relic, Jaeger) with performance data
+- Local performance analysis during development
+- Identify slow operations and bottlenecks
+- Understand code execution paths
+- Measure resource usage patterns
 
-**When to use OpenTelemetry instead:**
-- You need vendor-specific integrations
-- Automatic instrumentation is required
-- Standards compliance is critical
+**tracez is NOT:**
+- Distributed tracing (no cross-service correlation)
+- An APM system (no UI, no analysis tools)
+- A metrics system (spans only, not counters/gauges)
+- A logging framework (structured performance data only)
 
-### Key Features
+## When to Use tracez
+
+**Use tracez when building:**
+- Custom APM integrations
+- Performance monitoring tools
+- Development profiling utilities
+- Lightweight observability for libraries
+- Systems where you control the entire span pipeline
+
+**Use OpenTelemetry instead when:**
+- You need actual distributed tracing across services
+- Vendor-specific integrations are required
+- Automatic instrumentation is needed
+- Standards compliance (W3C Trace Context) is critical
+- Cross-process correlation is required
+- You want a complete solution, not a building block
+
+## Core Features
 
 - **Minimal Dependencies**: Standard library only
-- **Thread-Safe**: Concurrent operations across goroutines
-- **Backpressure Protection**: Spans dropped when buffers full (prevents OOM)
-- **Resource Management**: Proper cleanup and shutdown
-- **High Performance**: 1.84M spans/sec single-threaded, 3.92M spans/sec parallel (measured with race detection enabled)
-- **Context Propagation**: Automatic parent-child span relationships
-- **Memory Efficient**: Buffer shrinking and bounded growth
+- **Thread-Safe**: Safe concurrent operations across goroutines
+- **Backpressure Protection**: Drops spans when buffers full (prevents OOM)
+- **High Performance**: 1.84M spans/sec single-threaded, 3.92M spans/sec parallel
+- **Context Propagation**: Parent-child relationships within your process
+- **Memory Efficient**: Bounded growth with automatic buffer shrinking
 
 ## Quick Start
 
@@ -44,119 +61,182 @@ package main
 
 import (
     "context"
+    "fmt"
     "github.com/zoobzio/tracez"
 )
 
 func main() {
-    // Create tracer
-    tracer := tracez.New("my-service")
+    // Create tracer for your library/component
+    tracer := tracez.New("auth-component")  // Component name, not service
     defer tracer.Close()
     
-    // Add collector
-    collector := tracez.NewCollector("console", 100)
-    tracer.AddCollector("console", collector)
+    // Add collector with buffer size
+    collector := tracez.NewCollector("apm-exporter", 100)
+    tracer.AddCollector("apm-exporter", collector)
     
-    // Create spans
-    ctx, span := tracer.StartSpan(context.Background(), "operation")
-    span.SetTag("user.id", "123")
+    // Collect performance data
+    ctx, span := tracer.StartSpan(context.Background(), "validate-token")
+    span.SetTag("token.type", "jwt")
     defer span.Finish()
     
-    // Child spans automatically inherit context
-    childCtx, childSpan := tracer.StartSpan(ctx, "database-query")
-    childSpan.SetTag("table", "users")
+    // Child spans track nested operations
+    childCtx, childSpan := tracer.StartSpan(ctx, "database-lookup")
+    childSpan.SetTag("query", "SELECT * FROM users WHERE token = ?")
     defer childSpan.Finish()
     
-    // Export completed spans
+    // Export spans for processing
     spans := collector.Export()
-    // ... process spans
+    
+    // Feed to your APM system
+    for _, span := range spans {
+        // Send to Datadog, New Relic, Jaeger, etc.
+        sendToAPM(span)
+    }
+}
+
+func sendToAPM(span tracez.Span) {
+    // Your APM integration logic
+    // Convert span to vendor format
+    // Batch and send to APM endpoint
 }
 ```
 
-## Core Components
+## Building Observability Systems
 
-### Tracer
-Manages span lifecycle and collection. Thread-safe for concurrent use.
+tracez provides primitives. You build the system:
+
+### Example: Local Development Profiler
 
 ```go
-tracer := tracez.New("service-name")
-ctx, span := tracer.StartSpan(context.Background(), "operation-name")
+// Collect spans during test runs
+collector := tracez.NewCollector("profiler", 1000)
+tracer.AddCollector("profiler", collector)
+
+// Run your code...
+
+// Analyze performance locally
+spans := collector.Export()
+analyzer := NewPerformanceAnalyzer(spans)
+slowOps := analyzer.FindSlowOperations(100 * time.Millisecond)
+fmt.Printf("Found %d slow operations\n", len(slowOps))
+```
+
+### Example: Production APM Integration
+
+```go
+// Batch spans for APM export
+type APMExporter struct {
+    collector *tracez.Collector
+    client    *http.Client
+    endpoint  string
+}
+
+func (e *APMExporter) Run(ctx context.Context) {
+    ticker := time.NewTicker(10 * time.Second)
+    defer ticker.Stop()
+    
+    for {
+        select {
+        case <-ticker.C:
+            spans := e.collector.Export()
+            if len(spans) > 0 {
+                e.sendBatch(spans)
+            }
+        case <-ctx.Done():
+            return
+        }
+    }
+}
+```
+
+## Components
+
+### Tracer
+Manages span lifecycle within your Go application. One per library/component.
+
+```go
+tracer := tracez.New("component-name")  // Not service name
+ctx, span := tracer.StartSpan(context.Background(), "operation")
 ```
 
 ### Span & ActiveSpan
-- `Span`: Immutable span data structure
-- `ActiveSpan`: Thread-safe wrapper for ongoing spans
+- `Span`: Immutable completed span data
+- `ActiveSpan`: Thread-safe wrapper for spans being recorded
 
 ```go
-span.SetTag("key", "value")      // Thread-safe
-span.SetTag("status", "success") // Concurrent access safe
-span.Finish()                    // Safe to call multiple times
+span.SetTag("cache.hit", "true")     // Thread-safe
+span.SetTag("cache.key", key)        // Concurrent safe
+span.Finish()                         // Idempotent
 ```
 
 ### Collector
-Buffers completed spans for batch export with backpressure protection.
+Buffers spans for batch processing. Foundation for exporters.
 
 ```go
 collector := tracez.NewCollector("exporter-name", bufferSize)
 tracer.AddCollector("exporter", collector)
 
-// Export spans (returns deep copy)
+// Get spans for processing (returns copy)
 spans := collector.Export()
 
-// Monitor drops
+// Monitor health
 dropped := collector.DroppedCount()
+if dropped > 0 {
+    log.Printf("Warning: dropped %d spans\n", dropped)
+}
 ```
-
-## Thread Safety
-
-| Component | Thread Safety |
-|-----------|---------------|
-| `Tracer` | ✅ Safe for concurrent use |
-| `Collector` | ✅ Safe for concurrent use |
-| `ActiveSpan` | ✅ SetTag/GetTag operations safe |
-| `Span` (raw) | ❌ Not thread-safe |
 
 ## Performance Characteristics
 
-- **Span Creation**: 1.84M spans/sec single-threaded, 3.92M spans/sec parallel (measured with race detection)
-- **Memory Overhead**: ~344 bytes per span base + tag data (~20 bytes per tag)
-- **Allocation Pattern**: 344 B/op base + tag data, 8 allocs/op minimum per span
-- **Backpressure**: Drops spans when buffer full (configurable)
+Measured with race detection enabled:
+
+| Operation | Throughput | Memory | Allocations |
+|-----------|------------|--------|-------------|
+| Span Creation | 1.84M/sec (single) | 344 B/op | 8 allocs |
+| Span Creation | 3.92M/sec (parallel) | 344 B/op | 8 allocs |
+| Tag Addition | - | ~20 B/tag | 1 alloc |
+| Export (1000 spans) | 485K/sec | Deep copy | Batch alloc |
+
+Backpressure: Automatically drops spans when buffer full (configurable).
 
 ## Documentation
 
-### Learn tracez
-- **[Getting Started](docs/getting-started.md)** - 5-minute tutorial to your first working trace
-- **[API Reference](docs/api-reference.md)** - Complete function documentation with examples
-- **[Cookbook](docs/cookbook.md)** - Common patterns and best practices
-- **[Troubleshooting](docs/troubleshooting.md)** - When things go wrong
+### Learn the Primitives
+- **[Getting Started](docs/getting-started.md)** - Build your first span collector
+- **[API Reference](docs/api-reference.md)** - Complete component documentation
+- **[Cookbook](docs/cookbook.md)** - Integration patterns and examples
+- **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions
 
-### Working Examples
-- **[HTTP Middleware](examples/http-middleware/)** - Trace web requests and middleware chains
-- **[Database Patterns](examples/database-patterns/)** - Detect N+1 queries and optimize performance
-- **[Worker Pool](examples/worker-pool/)** - Context propagation across goroutines
+### Integration Examples
+- **[APM Export](examples/apm-export/)** - Send spans to Datadog/New Relic
+- **[Performance Analysis](examples/performance-analysis/)** - Local profiling tools
+- **[HTTP Middleware](examples/http-middleware/)** - Web request instrumentation
+- **[Database Monitoring](examples/database-monitoring/)** - Query performance tracking
 
-## Architecture
+## Architecture Principles
 
-tracez follows the principle of **visible complexity** - all behavior is explicit and testable:
+tracez follows **visible complexity** - no hidden behavior:
 
-- **No Hidden Magic**: No reflection, code generation, or framework abstractions
-- **Predictable Performance**: Linear scaling, bounded memory usage
-- **Verifiable Behavior**: Every code path has corresponding unit tests
-- **Simple Primitives**: Components compose without hidden dependencies
+- **No Magic**: No reflection, code generation, or hidden abstractions
+- **Predictable**: Linear performance, bounded memory
+- **Testable**: Every path has unit tests
+- **Composable**: Simple primitives build complex systems
 
 ### Memory Management
 
-- Collectors automatically shrink buffers after large exports
-- Backpressure prevents unbounded memory growth
-- Deep copying prevents data sharing between exports
-- Clean shutdown prevents goroutine leaks
+- Automatic buffer shrinking after exports
+- Bounded growth with backpressure
+- Deep copies prevent reference leaks
+- Clean shutdown without goroutine leaks
 
-### Error Handling
+### Thread Safety
 
-- Non-blocking operations (spans dropped instead of blocking)
-- Graceful degradation under high load
-- Explicit error returns (no silent failures)
-- Timeout protection for shutdown operations
+| Component | Safety | Notes |
+|-----------|--------|-------|
+| `Tracer` | ✅ Safe | Concurrent span creation |
+| `Collector` | ✅ Safe | Concurrent collection/export |
+| `ActiveSpan` | ✅ Safe | Concurrent tag operations |
+| `Span` (exported) | ❌ Immutable | Read-only after export |
 
 ## Installation
 
@@ -171,42 +251,42 @@ go get github.com/zoobzio/tracez
 ## Testing
 
 ```bash
-# Run unit tests with race detection
+# Run tests with race detection
 make test
 
-# Check test coverage (95.9%)
+# Coverage report (95.9%)
 make coverage
 
-# Run linting
+# Linting
 make lint
 
-# Full CI pipeline
+# Full CI suite
 make check
 ```
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing requirements, and code standards.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-Quick checklist:
-1. Fork and create feature branch
-2. Write tests (>95% coverage required)
-3. Ensure `make ci` passes
-4. Update documentation if needed
+Quick start:
+1. Fork repository
+2. Create feature branch
+3. Write tests (maintain >95% coverage)
+4. Run `make ci`
 5. Submit pull request
 
 ## License
 
-MIT License - see LICENSE file for details.
+MIT License - see LICENSE file.
 
-## Design Principles
+## Design Philosophy
 
-tracez is built following these principles:
+tracez is a primitive, not a platform:
 
-1. **Simplicity Over Features**: Minimal API surface
-2. **Performance Over Convenience**: Predictable resource usage
-3. **Explicitness Over Magic**: All behavior is visible
-4. **Composition Over Inheritance**: Build complex behavior from simple parts
-5. **Testing Over Documentation**: Behavior verified by tests
+1. **Primitives Over Frameworks**: Building blocks, not solutions
+2. **Explicit Over Automatic**: You control what happens
+3. **Performance Over Features**: Predictable resource usage
+4. **Visibility Over Convenience**: See how everything works
+5. **Composition Over Configuration**: Build what you need
 
-This makes tracez suitable for systems where predictability and resource efficiency matter more than feature completeness.
+This makes tracez ideal when you need to build custom observability solutions or integrate with specific APM systems without framework overhead.
