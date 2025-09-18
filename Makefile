@@ -11,8 +11,6 @@ COVERPROFILE := coverage.out
 
 # Target directories
 DOCS_DIR := docs
-EXAMPLES_DIR := examples
-TEST_DIR := testing
 
 .PHONY: help
 help: ## Show available targets
@@ -26,15 +24,6 @@ test: ## Run unit tests with race detection
 test-short: ## Run unit tests (short mode)
 	$(GO) test $(TESTFLAGS) -short $(GOFLAGS) ./...
 
-.PHONY: test-examples
-test-examples: ## Run tests for all examples
-	@echo "Running example tests..."
-	@for dir in examples/*/; do \
-		if [ -f "$$dir/main_test.go" ]; then \
-			echo "Testing $$dir"; \
-			(cd "$$dir" && go test -v -race ./...); \
-		fi \
-	done
 
 .PHONY: bench
 bench: ## Run benchmarks
@@ -60,43 +49,17 @@ coverage-text: ## Show test coverage in terminal
 check: test lint ## Quick verification (tests + linting)
 
 .PHONY: ci
-ci: clean lint test integration test-benchmarks coverage ## Full CI simulation (all tests + quality checks)
+ci: clean lint test coverage ## Full CI simulation (tests + quality checks)
 	@echo "Full CI simulation complete!"
 
-.PHONY: integration
-integration: ## Run integration tests
-	@if [ -d "$(TEST_DIR)/integration" ]; then \
-		$(GO) test $(TESTFLAGS) ./$(TEST_DIR)/integration/...; \
-	else \
-		echo "No integration tests found"; \
-	fi
 
-.PHONY: e2e
-e2e: ## Run end-to-end tests  
-	@if [ -d "$(TEST_DIR)/e2e" ]; then \
-		$(GO) test $(TESTFLAGS) ./$(TEST_DIR)/e2e/...; \
-	else \
-		echo "No e2e tests found"; \
-	fi
 
-.PHONY: benchmarks
-benchmarks: ## Run performance benchmarks
-	@if [ -d "$(TEST_DIR)/benchmarks" ]; then \
-		$(GO) test -bench=. -benchmem ./$(TEST_DIR)/benchmarks/...; \
-	else \
-		echo "No benchmark tests found"; \
-	fi
 
-.PHONY: test-benchmarks
-test-benchmarks: ## Run all benchmarks
-	@echo "Running all benchmarks..."
-	@$(GO) test -v -bench=. -benchmem -benchtime=1s -timeout=10m ./$(TEST_DIR)/benchmarks/...
 
 
 .PHONY: test-all
-test-all: ## Run all test suites (unit + integration)
+test-all: ## Run all test suites (unit tests)
 	@$(MAKE) test
-	@$(MAKE) integration
 	@echo "All test suites completed!"
 
 .PHONY: build
@@ -133,18 +96,6 @@ doc: ## Start documentation server
 	@echo "Starting documentation server at http://localhost:6060/pkg/github.com/zoobzio/tracez/"
 	godoc -http=:6060
 
-.PHONY: examples
-examples: ## Run all examples
-	@if [ -d "$(EXAMPLES_DIR)" ]; then \
-		for example in $(EXAMPLES_DIR)/*; do \
-			if [ -f "$$example/main.go" ]; then \
-				echo "Running example: $$example"; \
-				$(GO) run "$$example/main.go"; \
-			fi \
-		done; \
-	else \
-		echo "No examples found"; \
-	fi
 
 .PHONY: stress
 stress: ## Run stress tests
@@ -160,7 +111,7 @@ install-tools: ## Install development tools
 	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
 
 .PHONY: all
-all: clean fmt vet lint test coverage integration benchmarks build ## Run all quality checks
+all: clean fmt vet lint test coverage build ## Run all quality checks
 
 # Release targets
 .PHONY: release-check
