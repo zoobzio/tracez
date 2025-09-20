@@ -8,12 +8,12 @@ Complete reference for all public functions and types in tracez.
 
 The main entry point for creating and managing spans.
 
-#### `tracez.New(serviceName string) *Tracer`
+#### `tracez.New() *Tracer`
 
-Creates a new tracer for the specified service.
+Creates a new tracer.
 
 ```go
-tracer := tracez.New("user-service")
+tracer := tracez.New()
 defer tracer.Close()
 ```
 

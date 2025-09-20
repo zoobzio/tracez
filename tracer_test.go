@@ -14,7 +14,7 @@ import (
 const DBQueryKey = "db.query"
 
 func TestNewTracer(t *testing.T) {
-	tracer := New("test-service")
+	tracer := New()
 
 	// Service name is internal now - just verify tracer was created.
 	if tracer == nil {
@@ -25,7 +25,7 @@ func TestNewTracer(t *testing.T) {
 }
 
 func TestTracerAddCollector(_ *testing.T) {
-	tracer := New("test-service")
+	tracer := New()
 	collector := NewCollector("test-collector", 10)
 	defer collector.close()
 
@@ -37,7 +37,7 @@ func TestTracerAddCollector(_ *testing.T) {
 }
 
 func TestTracerStartSpanNoParent(t *testing.T) {
-	tracer := New("test-service")
+	tracer := New()
 	ctx := context.Background()
 
 	newCtx, activeSpan := tracer.StartSpan(ctx, "test-operation")
@@ -72,7 +72,7 @@ func TestTracerStartSpanNoParent(t *testing.T) {
 }
 
 func TestTracerStartSpanWithParent(t *testing.T) {
-	tracer := New("test-service")
+	tracer := New()
 	ctx := context.Background()
 
 	// Create parent span.
@@ -104,7 +104,7 @@ func TestTracerStartSpanWithParent(t *testing.T) {
 }
 
 func TestTracerCollectSpan(t *testing.T) {
-	tracer := New("test-service")
+	tracer := New()
 	collector := NewCollector("test-collector", 10)
 	tracer.AddCollector("test-collector", collector)
 	defer collector.close()
@@ -138,7 +138,7 @@ func TestTracerCollectSpan(t *testing.T) {
 }
 
 func TestTracerCollectSpanMultipleCollectors(t *testing.T) {
-	tracer := New("test-service")
+	tracer := New()
 
 	collector1 := NewCollector("collector1", 10)
 	collector2 := NewCollector("collector2", 10)
@@ -170,7 +170,7 @@ func TestTracerCollectSpanMultipleCollectors(t *testing.T) {
 }
 
 func TestTracerReset(t *testing.T) {
-	tracer := New("test-service")
+	tracer := New()
 
 	collector1 := NewCollector("collector1", 10)
 	collector2 := NewCollector("collector2", 10)
@@ -214,7 +214,7 @@ func TestTracerReset(t *testing.T) {
 }
 
 func TestTracerClose(t *testing.T) {
-	tracer := New("test-service")
+	tracer := New()
 
 	collector1 := NewCollector("collector1", 10)
 	collector2 := NewCollector("collector2", 10)
@@ -234,7 +234,7 @@ func TestTracerClose(t *testing.T) {
 }
 
 func TestTracerGenerateIDs(t *testing.T) {
-	tracer := New("test-service")
+	tracer := New()
 	ctx := context.Background()
 
 	// Generate multiple spans to test ID uniqueness.
@@ -286,7 +286,7 @@ func TestTracerGenerateIDs(t *testing.T) {
 }
 
 func TestTracerConcurrentSpanCreation(t *testing.T) {
-	tracer := New("test-service")
+	tracer := New()
 	collector := NewCollector("test", 100)
 	tracer.AddCollector("test", collector)
 	defer collector.close()
@@ -327,7 +327,7 @@ func TestTracerConcurrentSpanCreation(t *testing.T) {
 }
 
 func TestTracerCompleteWorkflow(t *testing.T) {
-	tracer := New("test-service")
+	tracer := New()
 	collector := NewCollector("workflow-collector", 50)
 	tracer.AddCollector("workflow-collector", collector)
 	defer collector.close()
@@ -404,7 +404,7 @@ func TestTracerCompleteWorkflow(t *testing.T) {
 }
 
 func TestTracerKeyConstantsAndBackwardsCompatibility(t *testing.T) {
-	tracer := New("test-service")
+	tracer := New()
 	ctx := context.Background()
 
 	// Test Key constants work.
@@ -431,7 +431,7 @@ func TestTracerIDFallback(t *testing.T) {
 	// This test verifies fallback behavior when crypto/rand fails.
 	// In practice, this is hard to trigger, but the code handles it.
 
-	tracer := New("test-service")
+	tracer := New()
 	ctx := context.Background()
 
 	_, activeSpan := tracer.StartSpan(ctx, "test-operation")
@@ -451,7 +451,7 @@ func TestTracerStressTest(t *testing.T) {
 		t.Skip("Skipping stress test in short mode")
 	}
 
-	tracer := New("stress-test-service")
+	tracer := New()
 	collector := NewCollector("stress-collector", 1000)
 	tracer.AddCollector("stress-collector", collector)
 	defer collector.close()
@@ -503,7 +503,7 @@ func TestTracerStressTest(t *testing.T) {
 
 // TestTracerIDPoolIntegration tests ID pools integrated with tracer.
 func TestTracerIDPoolIntegration(t *testing.T) {
-	tracer := New("pool-test-service")
+	tracer := New()
 	defer tracer.Close()
 
 	ctx := context.Background()
@@ -540,7 +540,7 @@ func TestTracerIDPoolIntegration(t *testing.T) {
 
 // TestTracerCloseWithPools tests clean shutdown of tracer with ID pools.
 func TestTracerCloseWithPools(t *testing.T) {
-	tracer := New("close-test-service")
+	tracer := New()
 
 	// Force pool initialization.
 	ctx := context.Background()
@@ -566,7 +566,7 @@ func TestTracerCloseWithPools(t *testing.T) {
 // TestTracerWithFakeClock verifies that WithClock enables deterministic span timing.
 func TestTracerWithFakeClock(t *testing.T) {
 	fakeClock := clockz.NewFakeClock()
-	tracer := New("test-service").WithClock(fakeClock)
+	tracer := New().WithClock(fakeClock)
 	defer tracer.Close()
 
 	// Start a span
@@ -595,7 +595,7 @@ func TestTracerWithFakeClock(t *testing.T) {
 
 // TestTracerBackwardCompatibility ensures New() constructor still works with real clock.
 func TestTracerBackwardCompatibility(t *testing.T) {
-	tracer := New("test-service")
+	tracer := New()
 	defer tracer.Close()
 
 	// Should use real clock by default
@@ -620,7 +620,7 @@ func TestTracerBackwardCompatibility(t *testing.T) {
 // TestTracerFallbackIDGeneration verifies deterministic fallback IDs with fake clock.
 func TestTracerFallbackIDGeneration(t *testing.T) {
 	fakeClock := clockz.NewFakeClock()
-	tracer := New("test-service").WithClock(fakeClock)
+	tracer := New().WithClock(fakeClock)
 	defer tracer.Close()
 
 	// Force pool initialization to test fallback behavior
@@ -650,8 +650,8 @@ func TestTracerClockInjection(t *testing.T) {
 	fakeClock1 := clockz.NewFakeClockAt(time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC))
 	fakeClock2 := clockz.NewFakeClockAt(time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC))
 
-	tracer1 := New("service1").WithClock(fakeClock1)
-	tracer2 := New("service2").WithClock(fakeClock2)
+	tracer1 := New().WithClock(fakeClock1)
+	tracer2 := New().WithClock(fakeClock2)
 	defer tracer1.Close()
 	defer tracer2.Close()
 

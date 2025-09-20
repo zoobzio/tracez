@@ -16,7 +16,7 @@ func TestActiveSpanSetTag(t *testing.T) {
 		StartTime: time.Now(),
 	}
 
-	tracer := New("test-service")
+	tracer := New()
 	activeSpan := &ActiveSpan{span: span, tracer: tracer}
 
 	activeSpan.SetTag("key1", "value1")
@@ -44,7 +44,7 @@ func TestActiveSpanGetTag(t *testing.T) {
 		Tags:      map[string]string{"existing": "value"},
 	}
 
-	tracer := New("test-service")
+	tracer := New()
 	activeSpan := &ActiveSpan{span: span, tracer: tracer}
 
 	// Test existing tag.
@@ -78,7 +78,7 @@ func TestConcurrentTagSetting(t *testing.T) {
 		StartTime: time.Now(),
 	}
 
-	tracer := New("test-service")
+	tracer := New()
 	activeSpan := &ActiveSpan{span: span, tracer: tracer}
 
 	var wg sync.WaitGroup
@@ -122,7 +122,7 @@ func TestConcurrentTagGetting(t *testing.T) {
 		Tags:      make(map[string]string),
 	}
 
-	tracer := New("test-service")
+	tracer := New()
 	activeSpan := &ActiveSpan{span: span, tracer: tracer}
 
 	// Pre-populate with some tags.
@@ -162,7 +162,7 @@ func TestConcurrentSetAndGet(t *testing.T) {
 		StartTime: time.Now(),
 	}
 
-	tracer := New("test-service")
+	tracer := New()
 	activeSpan := &ActiveSpan{span: span, tracer: tracer}
 
 	var wg sync.WaitGroup
@@ -206,7 +206,7 @@ func TestActiveSpanFinish(t *testing.T) {
 		StartTime: time.Now(),
 	}
 
-	tracer := New("test-service")
+	tracer := New()
 	collector := NewCollector("test", 10)
 	tracer.AddCollector("test", collector)
 	defer collector.close()
@@ -248,7 +248,7 @@ func TestActiveSpanContext(t *testing.T) {
 		StartTime: time.Now(),
 	}
 
-	tracer := New("test-service")
+	tracer := New()
 	activeSpan := &ActiveSpan{span: span, tracer: tracer}
 
 	parentCtx := context.Background()
@@ -264,7 +264,7 @@ func TestActiveSpanContext(t *testing.T) {
 
 func TestGetSpanFromContext(t *testing.T) {
 	// Test with span in context using proper API.
-	tracer := New("test-service")
+	tracer := New()
 	ctx, activeSpan := tracer.StartSpan(context.Background(), "test-operation")
 
 	extractedSpan := GetSpan(ctx)
@@ -297,7 +297,7 @@ func TestContextKeySafety(t *testing.T) {
 	ctx = context.WithValue(ctx, testKey("tracez"), "fake-bundle")
 
 	// Set our real span using proper API.
-	tracer := New("test-service")
+	tracer := New()
 	ctx, activeSpan := tracer.StartSpan(ctx, "test-operation")
 
 	// Should extract the real span, not the fake one.
@@ -313,7 +313,7 @@ func TestContextKeySafety(t *testing.T) {
 
 // TestContextBundling tests the new context bundling approach.
 func TestContextBundling(t *testing.T) {
-	tracer := New("bundle-test-service")
+	tracer := New()
 	defer tracer.Close()
 
 	ctx := context.Background()
@@ -345,7 +345,7 @@ func TestContextBundling(t *testing.T) {
 // TestBackwardCompatibilityContext tests that old context approach still works.
 func TestBackwardCompatibilityContext(t *testing.T) {
 	// This test ensures old code using ActiveSpan.Context() still works
-	tracer := New("compat-test-service")
+	tracer := New()
 	defer tracer.Close()
 
 	ctx := context.Background()

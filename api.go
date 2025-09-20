@@ -12,7 +12,7 @@
 //
 // Basic Usage:.
 //
-//	tracer := tracez.New("my-service")
+//	tracer := tracez.New()
 //	defer tracer.Close()
 //
 //	// Start a new span.

@@ -24,28 +24,25 @@ type Tracer struct {
 	traceIDPool *IDPool
 	spanIDPool  *IDPool
 	clock       clockz.Clock
-	serviceName string
 	mu          sync.Mutex
 	idPoolOnce  sync.Once
 }
 
-// New creates a new tracer for the specified service.
+// New creates a new tracer.
 // Uses the real clock for production behavior.
-func New(serviceName string) *Tracer {
+func New() *Tracer {
 	return &Tracer{
-		serviceName: serviceName,
-		collectors:  make(map[string]*Collector),
-		clock:       clockz.RealClock,
+		collectors: make(map[string]*Collector),
+		clock:      clockz.RealClock,
 	}
 }
 
 // WithClock returns a new tracer with the specified clock.
 // Enables clock injection for deterministic testing.
-func (t *Tracer) WithClock(clock clockz.Clock) *Tracer {
+func (*Tracer) WithClock(clock clockz.Clock) *Tracer {
 	return &Tracer{
-		serviceName: t.serviceName,
-		collectors:  make(map[string]*Collector),
-		clock:       clock,
+		collectors: make(map[string]*Collector),
+		clock:      clock,
 	}
 }
 
