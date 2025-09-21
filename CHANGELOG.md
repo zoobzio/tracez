@@ -8,23 +8,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Comprehensive contributor documentation suite
-- Professional project infrastructure
+- `SpanHandler` type for callback-based span processing
+- `OnSpanComplete(handler SpanHandler) uint64` - register synchronous handler
+- `OnSpanCompleteAsync(handler SpanHandler) uint64` - register asynchronous handler  
+- `RemoveHandler(id uint64)` - remove handler by ID
+- `SetPanicHook(hook func(uint64, interface{}))` - handle handler panics
+- `EnableWorkerPool(workers, queueSize int) error` - bounded async execution
+- `DroppedSpans() uint64` - monitor dropped spans due to full worker queue
 
 ### Changed
-- Updated project structure for better maintainability
-
-### Deprecated
-- Nothing
+- **BREAKING**: Replaced Collector abstraction with callback-based API
+  - Zero memory overhead when no handlers are registered
+  - Direct handler invocation instead of channel-based collection
+  - Handlers receive immutable span copies by value
+  - Migration example:
+    ```go
+    // Before
+    collector := tracez.NewCollector("spans", 1000)
+    tracer.AddCollector("spans", collector)
+    spans := collector.Export()
+    
+    // After
+    var spans []tracez.Span
+    tracer.OnSpanComplete(func(span tracez.Span) {
+        spans = append(spans, span)
+    })
+    ```
 
 ### Removed
-- Nothing
-
-### Fixed
-- Nothing
-
-### Security
-- Nothing
+- **BREAKING**: `Collector` type and all associated methods
+- **BREAKING**: `AddCollector()` method from Tracer
+- **BREAKING**: `Reset()` method from Tracer
+- `collector.go` and `collector_test.go` files (implementation detail)
 
 ## [1.0.0] - 2024-09-13
 

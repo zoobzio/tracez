@@ -49,10 +49,10 @@ tracez collects spans within your Go application for local performance analysis 
 
 - **Minimal Dependencies**: Standard library only
 - **Thread-Safe**: Safe concurrent operations across goroutines
-- **Backpressure Protection**: Drops spans when buffers full (prevents OOM)
+- **Zero Buffering**: Direct callback execution (no memory overhead)
 - **High Performance**: 1.84M spans/sec single-threaded, 3.92M spans/sec parallel
 - **Context Propagation**: Parent-child relationships within your process
-- **Memory Efficient**: Bounded growth with automatic buffer shrinking
+- **Memory Efficient**: No internal buffering or queuing
 
 ## Quick Start
 
@@ -70,34 +70,27 @@ func main() {
     tracer := tracez.New("auth-component")  // Component name, not service
     defer tracer.Close()
     
-    // Add collector with buffer size
-    collector := tracez.NewCollector("apm-exporter", 100)
-    tracer.AddCollector("apm-exporter", collector)
+    // Register callback for span completion
+    tracer.OnSpanFinish(func(span tracez.Span) {
+        // Send to your APM system
+        sendToAPM(span)
+    })
     
     // Collect performance data
     ctx, span := tracer.StartSpan(context.Background(), "validate-token")
     span.SetTag("token.type", "jwt")
-    defer span.Finish()
+    defer span.Finish()  // Triggers callback
     
     // Child spans track nested operations
     childCtx, childSpan := tracer.StartSpan(ctx, "database-lookup")
     childSpan.SetTag("query", "SELECT * FROM users WHERE token = ?")
-    defer childSpan.Finish()
-    
-    // Export spans for processing
-    spans := collector.Export()
-    
-    // Feed to your APM system
-    for _, span := range spans {
-        // Send to Datadog, New Relic, Jaeger, etc.
-        sendToAPM(span)
-    }
+    defer childSpan.Finish()  // Triggers callback
 }
 
 func sendToAPM(span tracez.Span) {
     // Your APM integration logic
     // Convert span to vendor format
-    // Batch and send to APM endpoint
+    // Send to APM endpoint (consider batching)
 }
 ```
 
@@ -109,16 +102,23 @@ tracez provides primitives. You build the system:
 
 ```go
 // Collect spans during test runs
-collector := tracez.NewCollector("profiler", 1000)
-tracer.AddCollector("profiler", collector)
+var spans []tracez.Span
+var mu sync.Mutex
+
+tracer.OnSpanFinish(func(span tracez.Span) {
+    mu.Lock()
+    spans = append(spans, span)
+    mu.Unlock()
+})
 
 // Run your code...
 
 // Analyze performance locally
-spans := collector.Export()
+mu.Lock()
 analyzer := NewPerformanceAnalyzer(spans)
 slowOps := analyzer.FindSlowOperations(100 * time.Millisecond)
 fmt.Printf("Found %d slow operations\n", len(slowOps))
+mu.Unlock()
 ```
 
 ### Example: Production APM Integration
@@ -126,9 +126,16 @@ fmt.Printf("Found %d slow operations\n", len(slowOps))
 ```go
 // Batch spans for APM export
 type APMExporter struct {
-    collector *tracez.Collector
-    client    *http.Client
-    endpoint  string
+    spans    []tracez.Span
+    mu       sync.Mutex
+    client   *http.Client
+    endpoint string
+}
+
+func (e *APMExporter) CollectSpan(span tracez.Span) {
+    e.mu.Lock()
+    e.spans = append(e.spans, span)
+    e.mu.Unlock()
 }
 
 func (e *APMExporter) Run(ctx context.Context) {
@@ -138,15 +145,24 @@ func (e *APMExporter) Run(ctx context.Context) {
     for {
         select {
         case <-ticker.C:
-            spans := e.collector.Export()
-            if len(spans) > 0 {
-                e.sendBatch(spans)
+            e.mu.Lock()
+            if len(e.spans) > 0 {
+                batch := e.spans
+                e.spans = nil
+                e.mu.Unlock()
+                e.sendBatch(batch)
+            } else {
+                e.mu.Unlock()
             }
         case <-ctx.Done():
             return
         }
     }
 }
+
+// Register with tracer
+exporter := &APMExporter{client: http.DefaultClient, endpoint: "..."}
+tracer.OnSpanFinish(exporter.CollectSpan)
 ```
 
 ## Components
@@ -166,24 +182,26 @@ ctx, span := tracer.StartSpan(context.Background(), "operation")
 ```go
 span.SetTag("cache.hit", "true")     // Thread-safe
 span.SetTag("cache.key", key)        // Concurrent safe
-span.Finish()                         // Idempotent
+span.Finish()                         // Idempotent, triggers callbacks
 ```
 
-### Collector
-Buffers spans for batch processing. Foundation for exporters.
+### Callbacks
+Register functions to process spans on completion. Foundation for exporters.
 
 ```go
-collector := tracez.NewCollector("exporter-name", bufferSize)
-tracer.AddCollector("exporter", collector)
+// Single callback
+tracer.OnSpanFinish(func(span tracez.Span) {
+    // Process completed span
+    exportToAPM(span)
+})
 
-// Get spans for processing (returns copy)
-spans := collector.Export()
+// Multiple callbacks supported
+tracer.OnSpanFinish(logSpan)
+tracer.OnSpanFinish(metricCollector.Record)
+tracer.OnSpanFinish(apmExporter.Send)
 
-// Monitor health
-dropped := collector.DroppedCount()
-if dropped > 0 {
-    log.Printf("Warning: dropped %d spans\n", dropped)
-}
+// Callbacks receive immutable span data
+// Called synchronously on span.Finish()
 ```
 
 ## Performance Characteristics
@@ -195,9 +213,9 @@ Measured with race detection enabled:
 | Span Creation | 1.84M/sec (single) | 344 B/op | 8 allocs |
 | Span Creation | 3.92M/sec (parallel) | 344 B/op | 8 allocs |
 | Tag Addition | - | ~20 B/tag | 1 alloc |
-| Export (1000 spans) | 485K/sec | Deep copy | Batch alloc |
+| Callback Execution | Synchronous | No overhead | 0 allocs |
 
-Backpressure: Automatically drops spans when buffer full (configurable).
+Callbacks execute synchronously on span.Finish() with no buffering overhead.
 
 ## Documentation
 
@@ -224,9 +242,9 @@ tracez follows **visible complexity** - no hidden behavior:
 
 ### Memory Management
 
-- Automatic buffer shrinking after exports
-- Bounded growth with backpressure
-- Deep copies prevent reference leaks
+- No internal buffering or queuing
+- Direct callback execution
+- Immutable spans prevent reference leaks
 - Clean shutdown without goroutine leaks
 
 ### Thread Safety
@@ -234,9 +252,9 @@ tracez follows **visible complexity** - no hidden behavior:
 | Component | Safety | Notes |
 |-----------|--------|-------|
 | `Tracer` | ✅ Safe | Concurrent span creation |
-| `Collector` | ✅ Safe | Concurrent collection/export |
+| `Callbacks` | ✅ Safe | Thread-safe registration |
 | `ActiveSpan` | ✅ Safe | Concurrent tag operations |
-| `Span` (exported) | ❌ Immutable | Read-only after export |
+| `Span` (completed) | ❌ Immutable | Read-only after finish |
 
 ## Installation
 

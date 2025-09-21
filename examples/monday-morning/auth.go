@@ -233,7 +233,7 @@ func (cp *ConnectionPool) ActiveConnections() int64 {
 // Production services don't have fixed response times.
 func variableLatency(base time.Duration) time.Duration {
 	// Add ±30% jitter
-	jitter := float64(base) * 0.3 * (rand.Float64()*2 - 1)
+	jitter := float64(base) * 0.3 * (rand.Float64()*2 - 1) // #nosec G404 -- Not used for security, just timing jitter
 	return base + time.Duration(jitter)
 }
 

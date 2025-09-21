@@ -71,18 +71,26 @@ func (a *ActiveSpan) GetTag(key Tag) (string, bool) {
 // Safe to call multiple times - subsequent calls are no-ops.
 func (a *ActiveSpan) Finish() {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	// Prevent double-finishing.
 	if !a.span.EndTime.IsZero() {
+		a.mu.Unlock()
 		return
 	}
 
 	a.span.EndTime = a.tracer.clock.Now()
 	a.span.Duration = a.span.EndTime.Sub(a.span.StartTime)
 
-	// Send to tracer for collection.
-	a.tracer.collectSpan(a.span)
+	// Make immutable copy
+	spanCopy := *a.span
+	if a.span.Tags != nil {
+		spanCopy.Tags = make(map[Tag]string, len(a.span.Tags))
+		for k, v := range a.span.Tags {
+			spanCopy.Tags[k] = v
+		}
+	}
+	a.mu.Unlock()
+
+	// Execute handlers with immutable copy
+	a.tracer.executeHandlers(spanCopy)
 }
 
 // TraceID returns the trace ID of this span.

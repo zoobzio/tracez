@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/zoobzio/clockz"
@@ -17,23 +19,38 @@ type contextBundle struct {
 	span   *Span
 }
 
+// SpanHandler is called when a span completes.
+type SpanHandler func(span Span)
+
+type handlerEntry struct {
+	handler SpanHandler
+	id      uint64
+	async   bool
+}
+
 // Tracer manages span lifecycle and collection.
 // Safe for concurrent use by multiple goroutines.
+//
+//nolint:govet // Field order optimized for functionality over memory
 type Tracer struct {
-	collectors  map[string]*Collector
-	traceIDPool *IDPool
-	spanIDPool  *IDPool
-	clock       clockz.Clock
-	mu          sync.Mutex
-	idPoolOnce  sync.Once
+	handlers     []handlerEntry
+	panicHook    func(handlerID uint64, r interface{})
+	workers      *workerPool
+	traceIDPool  *IDPool
+	spanIDPool   *IDPool
+	clock        clockz.Clock
+	handlersLock sync.RWMutex
+	idPoolOnce   sync.Once
+	nextID       atomic.Uint64
+	droppedSpans atomic.Uint64
 }
 
 // New creates a new tracer.
 // Uses the real clock for production behavior.
 func New() *Tracer {
 	return &Tracer{
-		collectors: make(map[string]*Collector),
-		clock:      clockz.RealClock,
+		handlers: make([]handlerEntry, 0),
+		clock:    clockz.RealClock,
 	}
 }
 
@@ -41,8 +58,8 @@ func New() *Tracer {
 // Enables clock injection for deterministic testing.
 func (*Tracer) WithClock(clock clockz.Clock) *Tracer {
 	return &Tracer{
-		collectors: make(map[string]*Collector),
-		clock:      clock,
+		handlers: make([]handlerEntry, 0),
+		clock:    clock,
 	}
 }
 
@@ -72,13 +89,53 @@ func (t *Tracer) ensureIDPools() {
 	})
 }
 
-// AddCollector registers a new collector with the tracer.
-// Users must track collector names themselves if needed.
-func (t *Tracer) AddCollector(name string, collector *Collector) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+// OnSpanComplete registers a synchronous handler called when spans complete.
+func (t *Tracer) OnSpanComplete(handler SpanHandler) uint64 {
+	return t.registerHandler(handler, false)
+}
 
-	t.collectors[name] = collector
+// OnSpanCompleteAsync registers an asynchronous handler called when spans complete.
+func (t *Tracer) OnSpanCompleteAsync(handler SpanHandler) uint64 {
+	return t.registerHandler(handler, true)
+}
+
+func (t *Tracer) registerHandler(handler SpanHandler, async bool) uint64 {
+	if handler == nil {
+		return 0
+	}
+
+	id := t.nextID.Add(1)
+
+	t.handlersLock.Lock()
+	defer t.handlersLock.Unlock()
+
+	t.handlers = append(t.handlers, handlerEntry{
+		id:      id,
+		handler: handler,
+		async:   async,
+	})
+
+	return id
+}
+
+// RemoveHandler removes a handler by ID.
+func (t *Tracer) RemoveHandler(id uint64) {
+	t.handlersLock.Lock()
+	defer t.handlersLock.Unlock()
+
+	// Preserve order
+	for i, h := range t.handlers {
+		if h.id == id {
+			copy(t.handlers[i:], t.handlers[i+1:])
+			t.handlers = t.handlers[:len(t.handlers)-1]
+			return
+		}
+	}
+}
+
+// SetPanicHook sets a function to be called when a handler panics.
+func (t *Tracer) SetPanicHook(hook func(handlerID uint64, r interface{})) {
+	t.panicHook = hook
 }
 
 // StartSpan creates a new span and returns it wrapped in an ActiveSpan.
@@ -114,52 +171,98 @@ func (t *Tracer) StartSpan(ctx context.Context, operation Key) (context.Context,
 	return newCtx, activeSpan
 }
 
-// collectSpan distributes a completed span to all registered collectors.
-func (t *Tracer) collectSpan(span *Span) {
-	t.mu.Lock()
-	collectors := make([]*Collector, 0, len(t.collectors))
-	for _, collector := range t.collectors {
-		collectors = append(collectors, collector)
+// executeHandlers calls all registered handlers with the completed span.
+func (t *Tracer) executeHandlers(span Span) {
+	t.handlersLock.RLock()
+	if len(t.handlers) == 0 {
+		t.handlersLock.RUnlock()
+		return
 	}
-	t.mu.Unlock()
 
-	// Send to collectors without holding the lock.
-	for _, collector := range collectors {
-		collector.Collect(span)
+	handlers := make([]handlerEntry, len(t.handlers))
+	copy(handlers, t.handlers)
+	t.handlersLock.RUnlock()
+
+	for _, h := range handlers {
+		if h.async {
+			// Make a copy of h for closure
+			entry := h
+			if t.workers != nil {
+				t.workers.submit(func() {
+					t.safeCall(entry, span)
+				})
+			} else {
+				go t.safeCall(entry, span)
+			}
+		} else {
+			t.safeCall(h, span)
+		}
 	}
 }
 
-// Reset clears all collectors' buffers without destroying them.
-// The collectors remain registered and their goroutines continue running.
-func (t *Tracer) Reset() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	// Reset all collectors (clear buffers and dropped counts).
-	for _, collector := range t.collectors {
-		collector.Reset()
-	}
+func (t *Tracer) safeCall(entry handlerEntry, span Span) {
+	defer func() {
+		if r := recover(); r != nil {
+			if t.panicHook != nil {
+				t.panicHook(entry.id, r)
+			}
+		}
+	}()
+	entry.handler(span)
 }
 
-// Close shuts down all collectors gracefully and cleans up ID pools.
+// EnableWorkerPool creates a bounded worker pool for async handlers.
+func (t *Tracer) EnableWorkerPool(workers, queueSize int) error {
+	if t.workers != nil {
+		return errors.New("worker pool already enabled")
+	}
+	if workers <= 0 {
+		return errors.New("workers must be > 0")
+	}
+	if queueSize <= 0 {
+		return errors.New("queueSize must be > 0")
+	}
+
+	t.workers = &workerPool{
+		tasks:   make(chan func(), queueSize),
+		stop:    make(chan struct{}),
+		dropped: &t.droppedSpans,
+	}
+
+	t.workers.wg.Add(workers)
+	for i := 0; i < workers; i++ {
+		go t.workers.run()
+	}
+
+	return nil
+}
+
+// DroppedSpans returns the number of spans dropped due to full worker queue.
+func (t *Tracer) DroppedSpans() uint64 {
+	return t.droppedSpans.Load()
+}
+
+// Close shuts down the tracer gracefully and cleans up resources.
 // This should be called when the tracer is no longer needed.
 func (t *Tracer) Close() {
-	// Close ID pools first to stop background goroutines.
+	// Stop new handler executions
+	t.handlersLock.Lock()
+	t.handlers = nil
+	t.handlersLock.Unlock()
+
+	// Wait for in-flight async tasks
+	if t.workers != nil {
+		t.workers.shutdown()
+		t.workers = nil
+	}
+
+	// Close ID pools
 	if t.traceIDPool != nil {
 		t.traceIDPool.Close()
 	}
 	if t.spanIDPool != nil {
 		t.spanIDPool.Close()
 	}
-
-	// Close all collectors to stop their goroutines.
-	t.mu.Lock()
-	for _, collector := range t.collectors {
-		collector.close()
-	}
-	t.mu.Unlock()
-
-	t.Reset()
 }
 
 // generateTraceID creates a new trace ID or returns the existing one from context.
@@ -178,4 +281,39 @@ func (t *Tracer) generateSpanID() string {
 	// Use ID pool for performance optimization.
 	t.ensureIDPools()
 	return t.spanIDPool.Get()
+}
+
+// workerPool manages a fixed number of workers for processing async handlers.
+//
+//nolint:govet // Field order optimized for functionality over memory
+type workerPool struct {
+	tasks   chan func()
+	stop    chan struct{}
+	dropped *atomic.Uint64
+	wg      sync.WaitGroup
+}
+
+func (w *workerPool) run() {
+	defer w.wg.Done()
+	for {
+		select {
+		case task := <-w.tasks:
+			task()
+		case <-w.stop:
+			return
+		}
+	}
+}
+
+func (w *workerPool) submit(task func()) {
+	select {
+	case w.tasks <- task:
+	default:
+		w.dropped.Add(1)
+	}
+}
+
+func (w *workerPool) shutdown() {
+	close(w.stop)
+	w.wg.Wait()
 }

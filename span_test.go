@@ -207,9 +207,10 @@ func TestActiveSpanFinish(t *testing.T) {
 	}
 
 	tracer := New()
-	collector := NewCollector("test", 10)
-	tracer.AddCollector("test", collector)
-	defer collector.close()
+	// Register handler but we don't need to check the result
+	tracer.OnSpanComplete(func(_ Span) {
+		// Handler called when span finishes
+	})
 
 	activeSpan := &ActiveSpan{span: span, tracer: tracer}
 

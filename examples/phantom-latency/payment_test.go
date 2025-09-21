@@ -202,9 +202,10 @@ func TestWithTracez(t *testing.T) {
 
 	// Create a tracer with collector
 	tracer := tracez.New().WithClock(clock)
-	collector := tracez.NewCollector("test", 1000)
-	collector.SetSyncMode(true)
-	tracer.AddCollector("test", collector)
+	var spans []tracez.Span
+	tracer.OnSpanComplete(func(span tracez.Span) {
+		spans = append(spans, span)
+	})
 	service.EnableTracing(tracer)
 
 	ctx := context.Background()
@@ -237,7 +238,7 @@ func TestWithTracez(t *testing.T) {
 	}
 
 	// Export spans to see what happened
-	spans := collector.Export()
+	// spans already captured by handler
 
 	t.Logf("\n=== WITHOUT TRACEZ (Current Reality) ===")
 	t.Logf("Payment: %v [SUCCESS]", service.metrics.P99Latency())

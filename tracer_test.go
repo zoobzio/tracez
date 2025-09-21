@@ -24,16 +24,25 @@ func TestNewTracer(t *testing.T) {
 	// No way to check collector count now - users manage their own.
 }
 
-func TestTracerAddCollector(_ *testing.T) {
+func TestTracerOnSpanComplete(t *testing.T) {
 	tracer := New()
-	collector := NewCollector("test-collector", 10)
-	defer collector.close()
 
-	// Add collector - users now provide the name.
-	tracer.AddCollector("test-collector", collector)
+	var called bool
+	id := tracer.OnSpanComplete(func(_ Span) {
+		called = true
+	})
 
-	// No way to retrieve collectors - users manage their own references.
-	// Just verify no panics or errors.
+	if id == 0 {
+		t.Error("Expected non-zero handler ID")
+	}
+
+	// Create and finish a span
+	_, span := tracer.StartSpan(context.Background(), "test")
+	span.Finish()
+
+	if !called {
+		t.Error("Handler was not called")
+	}
 }
 
 func TestTracerStartSpanNoParent(t *testing.T) {
@@ -105,9 +114,10 @@ func TestTracerStartSpanWithParent(t *testing.T) {
 
 func TestTracerCollectSpan(t *testing.T) {
 	tracer := New()
-	collector := NewCollector("test-collector", 10)
-	tracer.AddCollector("test-collector", collector)
-	defer collector.close()
+	var spans []Span
+	tracer.OnSpanComplete(func(span Span) {
+		spans = append(spans, span)
+	})
 
 	span := Span{
 		SpanID:    "test-span",
@@ -118,16 +128,12 @@ func TestTracerCollectSpan(t *testing.T) {
 		Duration:  time.Millisecond * 100,
 	}
 
-	tracer.collectSpan(&span)
+	// Execute handlers directly with the span
+	tracer.executeHandlers(span)
 
-	// Give time for processing.
-	time.Sleep(10 * time.Millisecond)
-
-	if collector.Count() != 1 {
-		t.Errorf("Expected 1 span in collector, got %d", collector.Count())
+	if len(spans) != 1 {
+		t.Errorf("Expected 1 span, got %d", len(spans))
 	}
-
-	spans := collector.Export()
 	if len(spans) != 1 {
 		t.Errorf("Expected 1 exported span, got %d", len(spans))
 	}
@@ -140,14 +146,15 @@ func TestTracerCollectSpan(t *testing.T) {
 func TestTracerCollectSpanMultipleCollectors(t *testing.T) {
 	tracer := New()
 
-	collector1 := NewCollector("collector1", 10)
-	collector2 := NewCollector("collector2", 10)
+	var handler1Spans []Span
+	var handler2Spans []Span
 
-	tracer.AddCollector("collector1", collector1)
-	tracer.AddCollector("collector2", collector2)
-
-	defer collector1.close()
-	defer collector2.close()
+	tracer.OnSpanComplete(func(span Span) {
+		handler1Spans = append(handler1Spans, span)
+	})
+	tracer.OnSpanComplete(func(span Span) {
+		handler2Spans = append(handler2Spans, span)
+	})
 
 	span := Span{
 		SpanID:  "test-span",
@@ -155,82 +162,72 @@ func TestTracerCollectSpanMultipleCollectors(t *testing.T) {
 		Name:    "test-operation",
 	}
 
-	tracer.collectSpan(&span)
+	// Execute handlers directly with the span
+	tracer.executeHandlers(span)
 
-	// Give time for processing.
-	time.Sleep(10 * time.Millisecond)
-
-	if collector1.Count() != 1 {
-		t.Errorf("Expected 1 span in collector1, got %d", collector1.Count())
+	if len(handler1Spans) != 1 {
+		t.Errorf("Expected 1 span in handler1, got %d", len(handler1Spans))
 	}
 
-	if collector2.Count() != 1 {
-		t.Errorf("Expected 1 span in collector2, got %d", collector2.Count())
+	if len(handler2Spans) != 1 {
+		t.Errorf("Expected 1 span in handler2, got %d", len(handler2Spans))
 	}
 }
 
-func TestTracerReset(t *testing.T) {
+func TestTracerRemoveHandler(t *testing.T) {
 	tracer := New()
 
-	collector1 := NewCollector("collector1", 10)
-	collector2 := NewCollector("collector2", 10)
-	defer collector1.close()
-	defer collector2.close()
+	var count int
+	id := tracer.OnSpanComplete(func(_ Span) {
+		count++
+	})
 
-	tracer.AddCollector("collector1", collector1)
-	tracer.AddCollector("collector2", collector2)
+	// Create and finish a span
+	_, span := tracer.StartSpan(context.Background(), "test1")
+	span.Finish()
 
-	// Add some spans.
-	span := Span{SpanID: "test-span", TraceID: "test-trace", Name: "test"}
-	collector1.Collect(&span)
-	collector2.Collect(&span)
-
-	time.Sleep(10 * time.Millisecond)
-
-	// Verify spans are collected.
-	if collector1.Count() != 1 {
-		t.Errorf("Expected 1 span in collector1 before reset, got %d", collector1.Count())
+	if count != 1 {
+		t.Errorf("Expected count to be 1, got %d", count)
 	}
 
-	// Reset should clear collector buffers but not shut them down.
-	tracer.Reset()
+	// Remove the handler
+	tracer.RemoveHandler(id)
 
-	// Verify collectors are cleared.
-	if collector1.Count() != 0 {
-		t.Errorf("Expected 0 spans in collector1 after reset, got %d", collector1.Count())
-	}
+	// Create and finish another span
+	_, span2 := tracer.StartSpan(context.Background(), "test2")
+	span2.Finish()
 
-	if collector2.Count() != 0 {
-		t.Errorf("Expected 0 spans in collector2 after reset, got %d", collector2.Count())
-	}
-
-	// Collectors should still work (not shut down).
-	collector1.Collect(&span)
-	time.Sleep(10 * time.Millisecond)
-
-	if collector1.Count() != 1 {
-		t.Errorf("Expected collector1 to still work after reset, got %d spans", collector1.Count())
+	// Count should still be 1 since handler was removed
+	if count != 1 {
+		t.Errorf("Expected count to still be 1 after handler removal, got %d", count)
 	}
 }
 
 func TestTracerClose(t *testing.T) {
 	tracer := New()
 
-	collector1 := NewCollector("collector1", 10)
-	collector2 := NewCollector("collector2", 10)
+	var handler1Spans []Span
+	var handler2Spans []Span
 
-	tracer.AddCollector("collector1", collector1)
-	tracer.AddCollector("collector2", collector2)
+	tracer.OnSpanComplete(func(span Span) {
+		handler1Spans = append(handler1Spans, span)
+	})
+	tracer.OnSpanComplete(func(span Span) {
+		handler2Spans = append(handler2Spans, span)
+	})
 
 	// Close should be equivalent to Reset (clear buffers).
 	tracer.Close()
 
-	// Verify collectors are cleared.
-	if collector1.Count() != 0 {
-		t.Errorf("Expected 0 spans in collector1 after close, got %d", collector1.Count())
-	}
+	// After close, handlers should be cleared
+	// Create a new span to verify handlers don't run
+	_, span := tracer.StartSpan(context.Background(), "after-close")
+	span.Finish()
 
-	// Clean up - collectors already closed by tracer.Close()
+	// Handler counts should not increase
+	if len(handler1Spans) != 0 {
+		t.Errorf("Expected no spans after close, got %d", len(handler1Spans))
+	}
 }
 
 func TestTracerGenerateIDs(t *testing.T) {
@@ -287,9 +284,13 @@ func TestTracerGenerateIDs(t *testing.T) {
 
 func TestTracerConcurrentSpanCreation(t *testing.T) {
 	tracer := New()
-	collector := NewCollector("test", 100)
-	tracer.AddCollector("test", collector)
-	defer collector.close()
+	var spans []Span
+	var mu sync.Mutex
+	tracer.OnSpanComplete(func(span Span) {
+		mu.Lock()
+		spans = append(spans, span)
+		mu.Unlock()
+	})
 
 	var wg sync.WaitGroup
 	numGoroutines := 50
@@ -312,13 +313,10 @@ func TestTracerConcurrentSpanCreation(t *testing.T) {
 
 	wg.Wait()
 
-	// Give time for all spans to be processed.
-	time.Sleep(100 * time.Millisecond)
-
 	expectedSpans := numGoroutines * spansPerGoroutine
-	actualSpans := collector.Count()
-	droppedSpans := collector.DroppedCount()
-	totalProcessed := actualSpans + int(droppedSpans)
+	actualSpans := len(spans)
+	droppedSpans := tracer.DroppedSpans()
+	totalProcessed := actualSpans + int(droppedSpans) //nolint:gosec // Safe conversion, test only
 
 	if totalProcessed != expectedSpans {
 		t.Errorf("Expected %d total spans, got %d (collected: %d, dropped: %d)",
@@ -328,9 +326,10 @@ func TestTracerConcurrentSpanCreation(t *testing.T) {
 
 func TestTracerCompleteWorkflow(t *testing.T) {
 	tracer := New()
-	collector := NewCollector("workflow-collector", 50)
-	tracer.AddCollector("workflow-collector", collector)
-	defer collector.close()
+	var spans []Span
+	tracer.OnSpanComplete(func(span Span) {
+		spans = append(spans, span)
+	})
 
 	ctx := context.Background()
 
@@ -354,11 +353,9 @@ func TestTracerCompleteWorkflow(t *testing.T) {
 	// Give time for processing.
 	time.Sleep(50 * time.Millisecond)
 
-	if collector.Count() != 3 {
-		t.Errorf("Expected 3 spans, got %d", collector.Count())
+	if len(spans) != 3 {
+		t.Errorf("Expected 3 spans, got %d", len(spans))
 	}
-
-	spans := collector.Export()
 	if len(spans) != 3 {
 		t.Fatalf("Expected 3 exported spans, got %d", len(spans))
 	}
@@ -452,9 +449,13 @@ func TestTracerStressTest(t *testing.T) {
 	}
 
 	tracer := New()
-	collector := NewCollector("stress-collector", 1000)
-	tracer.AddCollector("stress-collector", collector)
-	defer collector.close()
+	var spans []Span
+	var mu sync.Mutex
+	tracer.OnSpanComplete(func(span Span) {
+		mu.Lock()
+		spans = append(spans, span)
+		mu.Unlock()
+	})
 
 	ctx := context.Background()
 	numGoroutines := 100
@@ -486,9 +487,9 @@ func TestTracerStressTest(t *testing.T) {
 	// Give time for collection.
 	time.Sleep(200 * time.Millisecond)
 
-	actualSpans := collector.Count()
-	droppedSpans := collector.DroppedCount()
-	totalProcessed := actualSpans + int(droppedSpans)
+	actualSpans := len(spans)
+	droppedSpans := tracer.DroppedSpans()
+	totalProcessed := actualSpans + int(droppedSpans) //nolint:gosec // Safe conversion, test only
 
 	if totalProcessed != expectedSpans {
 		t.Errorf("Expected %d total spans, got %d (collected: %d, dropped: %d)",

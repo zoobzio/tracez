@@ -102,9 +102,10 @@ func TestAuthenticate_WithTracing(t *testing.T) {
 	
 	// Enable tracing
 	tracer := tracez.New().WithClock(clock)
-	collector := tracez.NewCollector("test", 100)
-	collector.SetSyncMode(true) // For deterministic tests
-	tracer.AddCollector("test", collector)
+	var spans []tracez.Span
+	tracer.OnSpanComplete(func(span tracez.Span) {
+		spans = append(spans, span)
+	})
 	auth.EnableTracing(tracer)
 	
 	ctx := context.Background()
@@ -125,7 +126,7 @@ func TestAuthenticate_WithTracing(t *testing.T) {
 	}
 
 	// Get the trace
-	spans := collector.Export()
+	// spans already captured by handler
 	
 	// The trace reveals EVERYTHING
 	t.Logf("\nTrace of cold authentication:")
@@ -157,7 +158,7 @@ func TestAuthenticate_WithTracing(t *testing.T) {
 		float64(permSpan.Duration)/float64(authSpan.Duration)*100)
 
 	// Second auth - cache hit (no cascade)
-	collector.Reset()
+	spans = nil // Clear spans for next test
 	
 	_, span2 := tracer.StartSpan(ctx, "test.auth_warm")
 	ctx2 := span2.Context(ctx)
@@ -173,7 +174,7 @@ func TestAuthenticate_WithTracing(t *testing.T) {
 		t.Fatal("Expected user, got nil")
 	}
 
-	spans = collector.Export()
+	// spans already captured by handler
 	t.Logf("\nTrace of warm authentication (cached):")
 	printTrace(t, spans, "")
 	
@@ -198,9 +199,10 @@ func TestAuthenticate_Performance(t *testing.T) {
 	
 	// Enable tracing to measure cascade impact
 	tracer := tracez.New().WithClock(clock)
-	collector := tracez.NewCollector("perf", 1000)
-	collector.SetSyncMode(true) // For deterministic tests
-	tracer.AddCollector("perf", collector)
+	var spans []tracez.Span
+	tracer.OnSpanComplete(func(span tracez.Span) {
+		spans = append(spans, span)
+	})
 	auth.EnableTracing(tracer)
 	
 	ctx := context.Background()
@@ -236,7 +238,7 @@ func TestAuthenticate_Performance(t *testing.T) {
 	// Now simulate normal operation - most users hit cache
 	t.Logf("\nNormal operation - users have warm cache:")
 	
-	collector.Reset()
+	spans = nil // Clear spans for next test
 	totalStart = time.Now()
 	for _, userID := range userIDs {
 		start := time.Now()
@@ -261,7 +263,7 @@ func TestAuthenticate_Performance(t *testing.T) {
 	t.Logf("Average per user: %v", totalDuration/time.Duration(len(userIDs)))
 	
 	// Analyze the spans to show the pattern
-	spans := collector.Export()
+	// spans already captured by handler
 	
 	slowSpans := 0
 	fastSpans := 0
@@ -288,9 +290,10 @@ func TestAuthenticate_DetailedBreakdown(t *testing.T) {
 	
 	// Enable tracing
 	tracer := tracez.New().WithClock(clock)
-	collector := tracez.NewCollector("breakdown", 100)
-	collector.SetSyncMode(true) // For deterministic tests
-	tracer.AddCollector("breakdown", collector)
+	var spans []tracez.Span
+	tracer.OnSpanComplete(func(span tracez.Span) {
+		spans = append(spans, span)
+	})
 	auth.EnableTracing(tracer)
 	
 	ctx := context.Background()
@@ -311,7 +314,7 @@ func TestAuthenticate_DetailedBreakdown(t *testing.T) {
 	}
 
 	// Analyze the cascade
-	spans := collector.Export()
+	// spans already captured by handler
 	
 	t.Logf("\nFull cascade breakdown:")
 	t.Logf("=====================================")
@@ -377,9 +380,13 @@ func TestAuthenticate_ConcurrentLoad(t *testing.T) {
 	
 	// Enable tracing to see the resource contention
 	tracer := tracez.New().WithClock(clock)
-	collector := tracez.NewCollector("load", 1000)
-	collector.SetSyncMode(true)
-	tracer.AddCollector("load", collector)
+	var spans []tracez.Span
+	var mu sync.Mutex
+	tracer.OnSpanComplete(func(span tracez.Span) {
+		mu.Lock()
+		spans = append(spans, span)
+		mu.Unlock()
+	})
 	auth.EnableTracing(tracer)
 	
 	ctx := context.Background()
@@ -397,7 +404,7 @@ func TestAuthenticate_ConcurrentLoad(t *testing.T) {
 	
 	// Clear cache to ensure fair comparison
 	auth.cache.Clear()
-	collector.Reset()
+	spans = nil // Clear spans for next test
 
 	// Test concurrent load - 20 users simultaneously
 	t.Logf("\n=== Load Test: 20 Concurrent Users ===")
@@ -450,7 +457,7 @@ func TestAuthenticate_ConcurrentLoad(t *testing.T) {
 	t.Logf("Slowdown factor: %.1fx", float64(avgUserTime)/float64(singleUserDuration))
 	
 	// Analyze connection pool contention in traces
-	spans := collector.Export()
+	// spans already captured by handler
 	connectionTimeouts := 0
 	maxActiveConnections := int64(0)
 	

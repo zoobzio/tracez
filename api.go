@@ -1,19 +1,24 @@
 // Package tracez provides a minimal, primitive distributed tracing library.
 //
-// tracez focuses on span collection and export without the complexity of.
+// tracez focuses on span creation and processing without the complexity of
 // full OpenTelemetry. It's designed for systems that need basic distributed
-// tracing with predictable performance and resource usage.
+// tracing with predictable performance and zero memory overhead when unused.
 //
-// Core Components:.
-//   - Tracer: Manages span lifecycle and collection.
+// Core Components:
+//   - Tracer: Manages span lifecycle and handlers.
 //   - Span: Represents a single unit of work.
 //   - ActiveSpan: Thread-safe wrapper for ongoing spans.
-//   - Collector: Buffers completed spans for export.
+//   - SpanHandler: Callback function invoked when spans complete.
 //
-// Basic Usage:.
+// Basic Usage:
 //
 //	tracer := tracez.New()
 //	defer tracer.Close()
+//
+//	// Register a handler for completed spans.
+//	tracer.OnSpanComplete(func(span Span) {
+//	    log.Printf("%s: %v", span.Name, span.Duration)
+//	})
 //
 //	// Start a new span.
 //	ctx, span := tracer.StartSpan(ctx, "operation-name")
@@ -26,30 +31,27 @@
 //	childCtx, childSpan := tracer.StartSpan(ctx, "child-operation")
 //	defer childSpan.Finish()
 //
-// Thread Safety:.
+// Thread Safety:
 //
 // Tracer is safe for concurrent use by multiple goroutines.
-// Collectors are safe for concurrent span buffering.
+// Handler registration/removal is thread-safe.
 // ActiveSpan SetTag/GetTag operations are safe for concurrent use.
+// Handlers receive immutable span copies, safe for any use.
 //
-// Spans themselves are NOT thread-safe - do not modify the same.
-// Span struct from multiple goroutines simultaneously.
-//
-// Context Propagation:.
+// Context Propagation:
 //
 // Spans are automatically linked via context.Context. Child spans
 // inherit their parent's TraceID and reference the parent's SpanID.
 //
-// Memory Management:.
+// Memory Management:
 //
-// Collectors automatically manage memory by shrinking buffers after.
-// export operations. Under high load, spans may be dropped to prevent
-// memory exhaustion - use Collector.DroppedCount() to monitor.
+// Zero memory overhead when no handlers are registered.
+// Handlers receive span copies by value to prevent data races.
+// Optional worker pool for bounded async handler execution.
 //
-// Resource Cleanup:.
+// Resource Cleanup:
 //
-// Call tracer.Close() to properly shut down all background goroutines.
-// Call tracer.Reset() to clear all collectors and spans.
+// Call tracer.Close() to properly shut down worker pools and handlers.
 package tracez
 
 // Key represents a span operation name.
