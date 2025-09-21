@@ -2,6 +2,7 @@ package tracez
 
 import (
 	"context"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -52,6 +53,22 @@ func (a *ActiveSpan) SetTag(key Tag, value string) {
 		a.span.Tags = make(map[Tag]string)
 	}
 	a.span.Tags[key] = value
+}
+
+// SetIntTag adds an integer key-value pair to the span.
+// The integer value is converted to a string for storage.
+// Thread-safe for concurrent access.
+// No-op if span is already finished.
+func (a *ActiveSpan) SetIntTag(key Tag, value int) {
+	a.SetTag(key, strconv.Itoa(value))
+}
+
+// SetBoolTag adds a boolean key-value pair to the span.
+// The boolean value is converted to a string for storage.
+// Thread-safe for concurrent access.
+// No-op if span is already finished.
+func (a *ActiveSpan) SetBoolTag(key Tag, value bool) {
+	a.SetTag(key, strconv.FormatBool(value))
 }
 
 // GetTag retrieves a tag value by key.

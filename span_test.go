@@ -70,6 +70,91 @@ func TestActiveSpanGetTag(t *testing.T) {
 	}
 }
 
+func TestActiveSpanSetIntTag(t *testing.T) {
+	span := &Span{
+		SpanID:    "test-span",
+		TraceID:   "test-trace",
+		Name:      "test",
+		StartTime: time.Now(),
+	}
+
+	tracer := New()
+	activeSpan := &ActiveSpan{span: span, tracer: tracer}
+
+	// Test setting positive integer
+	activeSpan.SetIntTag("count", 42)
+	if span.Tags["count"] != "42" {
+		t.Errorf("Expected tag count=42, got %s", span.Tags["count"])
+	}
+
+	// Test setting negative integer
+	activeSpan.SetIntTag("temperature", -15)
+	if span.Tags["temperature"] != "-15" {
+		t.Errorf("Expected tag temperature=-15, got %s", span.Tags["temperature"])
+	}
+
+	// Test setting zero
+	activeSpan.SetIntTag("offset", 0)
+	if span.Tags["offset"] != "0" {
+		t.Errorf("Expected tag offset=0, got %s", span.Tags["offset"])
+	}
+}
+
+func TestActiveSpanSetBoolTag(t *testing.T) {
+	span := &Span{
+		SpanID:    "test-span",
+		TraceID:   "test-trace",
+		Name:      "test",
+		StartTime: time.Now(),
+	}
+
+	tracer := New()
+	activeSpan := &ActiveSpan{span: span, tracer: tracer}
+
+	// Test setting true
+	activeSpan.SetBoolTag("success", true)
+	if span.Tags["success"] != "true" {
+		t.Errorf("Expected tag success=true, got %s", span.Tags["success"])
+	}
+
+	// Test setting false
+	activeSpan.SetBoolTag("error", false)
+	if span.Tags["error"] != "false" {
+		t.Errorf("Expected tag error=false, got %s", span.Tags["error"])
+	}
+}
+
+func TestActiveSpanSetTagsAfterFinish(t *testing.T) {
+	span := &Span{
+		SpanID:    "test-span",
+		TraceID:   "test-trace",
+		Name:      "test",
+		StartTime: time.Now(),
+	}
+
+	tracer := New()
+	activeSpan := &ActiveSpan{span: span, tracer: tracer}
+
+	// Finish the span
+	activeSpan.Finish()
+
+	// Try to set tags after finish (should be no-ops)
+	activeSpan.SetTag("string", "value")
+	activeSpan.SetIntTag("int", 123)
+	activeSpan.SetBoolTag("bool", true)
+
+	// Tags should not have been added
+	if _, ok := span.Tags["string"]; ok {
+		t.Error("String tag should not have been added after finish")
+	}
+	if _, ok := span.Tags["int"]; ok {
+		t.Error("Int tag should not have been added after finish")
+	}
+	if _, ok := span.Tags["bool"]; ok {
+		t.Error("Bool tag should not have been added after finish")
+	}
+}
+
 func TestConcurrentTagSetting(t *testing.T) {
 	span := &Span{
 		SpanID:    "test-span",
