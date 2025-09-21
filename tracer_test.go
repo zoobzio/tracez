@@ -674,3 +674,345 @@ func TestTracerClockInjection(t *testing.T) {
 		t.Errorf("Span2 start time %v, expected %v", span2.span.StartTime, expectedTime2)
 	}
 }
+
+func TestSetPanicHook(t *testing.T) {
+	tracer := New()
+
+	var hookCalled bool
+	var capturedID uint64
+	var capturedPanic interface{}
+
+	tracer.SetPanicHook(func(handlerID uint64, r interface{}) {
+		hookCalled = true
+		capturedID = handlerID
+		capturedPanic = r
+	})
+
+	// Register a handler that panics
+	id := tracer.OnSpanComplete(func(_ Span) {
+		panic("test panic")
+	})
+
+	// Create and finish a span to trigger the handler
+	_, span := tracer.StartSpan(context.Background(), "test")
+	span.Finish()
+
+	if !hookCalled {
+		t.Error("Panic hook was not called")
+	}
+
+	if capturedID != id {
+		t.Errorf("Expected handler ID %d, got %d", id, capturedID)
+	}
+
+	if capturedPanic != "test panic" {
+		t.Errorf("Expected panic value 'test panic', got %v", capturedPanic)
+	}
+}
+
+func TestOnSpanCompleteAsync(t *testing.T) {
+	tracer := New()
+
+	// Enable worker pool for async handlers
+	err := tracer.EnableWorkerPool(2, 10)
+	if err != nil {
+		t.Fatalf("Failed to enable worker pool: %v", err)
+	}
+	defer tracer.Close()
+
+	done := make(chan bool)
+	var called bool
+
+	id := tracer.OnSpanCompleteAsync(func(_ Span) {
+		called = true
+		done <- true
+	})
+
+	if id == 0 {
+		t.Error("Expected non-zero handler ID")
+	}
+
+	// Create and finish a span
+	_, span := tracer.StartSpan(context.Background(), "test")
+	span.Finish()
+
+	// Wait for async handler to execute
+	select {
+	case <-done:
+		if !called {
+			t.Error("Async handler was not called")
+		}
+	case <-time.After(time.Second):
+		t.Error("Async handler timeout")
+	}
+}
+
+func TestEnableWorkerPoolValidation(t *testing.T) {
+	tests := []struct {
+		name      string
+		workers   int
+		queueSize int
+		wantErr   string
+	}{
+		{
+			name:      "zero workers",
+			workers:   0,
+			queueSize: 10,
+			wantErr:   "workers must be > 0",
+		},
+		{
+			name:      "negative workers",
+			workers:   -1,
+			queueSize: 10,
+			wantErr:   "workers must be > 0",
+		},
+		{
+			name:      "zero queue size",
+			workers:   2,
+			queueSize: 0,
+			wantErr:   "queueSize must be > 0",
+		},
+		{
+			name:      "negative queue size",
+			workers:   2,
+			queueSize: -1,
+			wantErr:   "queueSize must be > 0",
+		},
+		{
+			name:      "valid configuration",
+			workers:   2,
+			queueSize: 10,
+			wantErr:   "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tracer := New()
+			defer tracer.Close()
+
+			err := tracer.EnableWorkerPool(tt.workers, tt.queueSize)
+
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Errorf("Expected error %q, got nil", tt.wantErr)
+				} else if err.Error() != tt.wantErr {
+					t.Errorf("Expected error %q, got %q", tt.wantErr, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestEnableWorkerPoolAlreadyEnabled(t *testing.T) {
+	tracer := New()
+	defer tracer.Close()
+
+	// Enable worker pool once
+	err := tracer.EnableWorkerPool(2, 10)
+	if err != nil {
+		t.Fatalf("First EnableWorkerPool failed: %v", err)
+	}
+
+	// Try to enable again
+	err = tracer.EnableWorkerPool(3, 20)
+	if err == nil {
+		t.Error("Expected error for double EnableWorkerPool, got nil")
+	}
+	if err.Error() != "worker pool already enabled" {
+		t.Errorf("Expected 'worker pool already enabled', got %v", err)
+	}
+}
+
+func TestWorkerPoolBasicOperation(t *testing.T) {
+	tracer := New()
+	defer tracer.Close()
+
+	// Enable worker pool
+	err := tracer.EnableWorkerPool(2, 10)
+	if err != nil {
+		t.Fatalf("Failed to enable worker pool: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var asyncCount int
+	var syncCount int
+
+	// Register async handler
+	tracer.OnSpanCompleteAsync(func(_ Span) {
+		mu.Lock()
+		asyncCount++
+		mu.Unlock()
+		wg.Done()
+	})
+
+	// Register sync handler
+	tracer.OnSpanComplete(func(_ Span) {
+		mu.Lock()
+		syncCount++
+		mu.Unlock()
+	})
+
+	// Create multiple spans
+	numSpans := 5
+	wg.Add(numSpans)
+
+	for i := 0; i < numSpans; i++ {
+		_, span := tracer.StartSpan(context.Background(), "test")
+		span.Finish()
+	}
+
+	// Wait for all async handlers to complete
+	wg.Wait()
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if asyncCount != numSpans {
+		t.Errorf("Expected %d async handler calls, got %d", numSpans, asyncCount)
+	}
+	if syncCount != numSpans {
+		t.Errorf("Expected %d sync handler calls, got %d", numSpans, syncCount)
+	}
+}
+
+func TestSpanDropCounting(t *testing.T) {
+	tracer := New()
+
+	// Enable worker pool with small queue
+	err := tracer.EnableWorkerPool(1, 2)
+	if err != nil {
+		t.Fatalf("Failed to enable worker pool: %v", err)
+	}
+
+	// Add a slow async handler to fill the queue
+	blocked := make(chan struct{})
+	unblock := make(chan struct{})
+
+	tracer.OnSpanCompleteAsync(func(_ Span) {
+		select {
+		case blocked <- struct{}{}:
+		default:
+		}
+		<-unblock
+	})
+
+	// Create first span to block the worker
+	_, span1 := tracer.StartSpan(context.Background(), "span1")
+	span1.Finish()
+
+	// Wait for handler to start blocking
+	<-blocked
+
+	// Create spans to fill and overflow the queue
+	for i := 0; i < 5; i++ {
+		_, span := tracer.StartSpan(context.Background(), "overflow")
+		span.Finish()
+	}
+
+	// Check dropped count (should be at least 3 since queue size is 2)
+	dropped := tracer.DroppedSpans()
+	if dropped < 3 {
+		t.Errorf("Expected at least 3 dropped spans, got %d", dropped)
+	}
+
+	// Unblock the handler and clean up
+	close(unblock)
+	tracer.Close()
+}
+
+func TestWorkerPoolShutdown(t *testing.T) {
+	tracer := New()
+
+	// Enable worker pool
+	err := tracer.EnableWorkerPool(2, 10)
+	if err != nil {
+		t.Fatalf("Failed to enable worker pool: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	executed := make(chan bool, 10)
+
+	// Register async handler
+	tracer.OnSpanCompleteAsync(func(_ Span) {
+		executed <- true
+		wg.Done()
+	})
+
+	// Create spans
+	wg.Add(3)
+	for i := 0; i < 3; i++ {
+		_, span := tracer.StartSpan(context.Background(), "test")
+		span.Finish()
+	}
+
+	// Wait for handlers to be processed
+	wg.Wait()
+
+	// Close tracer (should wait for any remaining handlers to complete)
+	tracer.Close()
+
+	// Count executed handlers
+	count := 0
+	close(executed)
+	for range executed {
+		count++
+	}
+
+	if count != 3 {
+		t.Errorf("Expected 3 handlers to execute, got %d", count)
+	}
+}
+
+func TestPanicIsolation(t *testing.T) {
+	tracer := New()
+	defer tracer.Close()
+
+	var handler1Count int
+	var handler2Count int
+	var handler3Count int
+	var panicCount int
+
+	tracer.SetPanicHook(func(_ uint64, _ interface{}) {
+		panicCount++
+	})
+
+	// First handler - runs fine
+	tracer.OnSpanComplete(func(_ Span) {
+		handler1Count++
+	})
+
+	// Second handler - panics
+	tracer.OnSpanComplete(func(_ Span) {
+		handler2Count++
+		panic("handler 2 panic")
+	})
+
+	// Third handler - should still run
+	tracer.OnSpanComplete(func(_ Span) {
+		handler3Count++
+	})
+
+	// Create and finish a span
+	_, span := tracer.StartSpan(context.Background(), "test")
+	span.Finish()
+
+	// Verify handlers 1 and 3 ran, handler 2 panicked
+	if handler1Count != 1 {
+		t.Errorf("Expected handler1 to run once, got %d", handler1Count)
+	}
+	if handler2Count != 1 {
+		t.Errorf("Expected handler2 to run once before panic, got %d", handler2Count)
+	}
+	if handler3Count != 1 {
+		t.Errorf("Expected handler3 to run once, got %d", handler3Count)
+	}
+	if panicCount != 1 {
+		t.Errorf("Expected 1 panic, got %d", panicCount)
+	}
+}

@@ -372,3 +372,34 @@ func TestBackwardCompatibilityContext(t *testing.T) {
 	childSpan.Finish()
 	span.Finish()
 }
+
+func TestSetTagAfterFinish(t *testing.T) {
+	tracer := New()
+	defer tracer.Close()
+
+	// Create a span
+	_, activeSpan := tracer.StartSpan(context.Background(), "test-span")
+
+	// Set a tag before finish
+	activeSpan.SetTag("before", "value1")
+
+	// Finish the span
+	activeSpan.Finish()
+
+	// Try to set a tag after finish
+	activeSpan.SetTag("after", "value2")
+
+	// Verify only the "before" tag exists
+	if activeSpan.span.Tags["before"] != "value1" {
+		t.Error("Expected 'before' tag to be set")
+	}
+
+	if _, exists := activeSpan.span.Tags["after"]; exists {
+		t.Error("Tag should not be set after span is finished")
+	}
+
+	// Verify span is marked as finished
+	if activeSpan.span.EndTime.IsZero() {
+		t.Error("Span should have EndTime set after Finish()")
+	}
+}
