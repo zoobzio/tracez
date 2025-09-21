@@ -3,7 +3,7 @@
 [![CI Status](https://github.com/zoobzio/tracez/workflows/CI/badge.svg)](https://github.com/zoobzio/tracez/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/zoobzio/tracez/graph/badge.svg?branch=main)](https://codecov.io/gh/zoobzio/tracez)
 [![Go Report Card](https://goreportcard.com/badge/github.com/zoobzio/tracez)](https://goreportcard.com/report/github.com/zoobzio/tracez)
-[![CodeQL](https://github.com/zoobzio/tracez/workflows/CodeQL/badge.svg)](https://github.com/zoobzio/tracez/security/code-scanning)
+[![CodeQL](https://github.com/zoobzio/tracez/workflows/CodeQL%20Security%20Analysis/badge.svg)](https://github.com/zoobzio/tracez/security/code-scanning)
 [![Go Reference](https://pkg.go.dev/badge/github.com/zoobzio/tracez.svg)](https://pkg.go.dev/github.com/zoobzio/tracez)
 [![License](https://img.shields.io/github/license/zoobzio/tracez)](LICENSE)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/zoobzio/tracez)](go.mod)
