@@ -149,7 +149,7 @@ func (t *Tracer) StartSpan(ctx context.Context, operation Key) (context.Context,
 	span := &Span{
 		TraceID:   t.generateTraceID(ctx),
 		SpanID:    t.generateSpanID(),
-		Name:      operation,
+		Name:      string(operation),
 		StartTime: t.clock.Now(),
 	}
 

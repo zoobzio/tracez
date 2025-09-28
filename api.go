@@ -55,7 +55,7 @@
 package tracez
 
 // Key represents a span operation name.
-type Key = string
+type Key string
 
 // Tag represents a span tag key.
 type Tag = string

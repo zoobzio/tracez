@@ -419,7 +419,7 @@ func TestTracerKeyConstantsAndBackwardsCompatibility(t *testing.T) {
 	// Test dynamic Key construction still works.
 	dynamicKey := Key("dynamic.operation.123")
 	_, dynamicSpan := tracer.StartSpan(ctx, dynamicKey)
-	if dynamicSpan.span.Name != dynamicKey {
+	if dynamicSpan.span.Name != string(dynamicKey) {
 		t.Errorf("Expected span name %s, got %s", dynamicKey, dynamicSpan.span.Name)
 	}
 }
