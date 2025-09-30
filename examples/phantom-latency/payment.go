@@ -109,7 +109,7 @@ func (sdk *StreamPaySDK) Execute(ctx context.Context, request map[string]string)
 		var attemptSpan *tracez.ActiveSpan
 		attemptCtx := ctx
 		if sdk.tracer != nil {
-			attemptCtx, attemptSpan = sdk.tracer.StartSpan(ctx, fmt.Sprintf("attempt_%d", attempts+1))
+			attemptCtx, attemptSpan = sdk.tracer.StartSpan(ctx, tracez.Key(fmt.Sprintf("attempt_%d", attempts+1)))
 		}
 		
 		// Try to get connection from pool
