@@ -17,6 +17,8 @@ func TestActiveSpanSetTag(t *testing.T) {
 	}
 
 	tracer := New()
+	// Add handler so tags are stored
+	tracer.OnSpanComplete(func(_ Span) {})
 	activeSpan := &ActiveSpan{span: span, tracer: tracer}
 
 	activeSpan.SetTag("key1", "value1")
@@ -45,6 +47,8 @@ func TestActiveSpanGetTag(t *testing.T) {
 	}
 
 	tracer := New()
+	// Add handler so operations work
+	tracer.OnSpanComplete(func(_ Span) {})
 	activeSpan := &ActiveSpan{span: span, tracer: tracer}
 
 	// Test existing tag.
@@ -79,6 +83,8 @@ func TestActiveSpanSetIntTag(t *testing.T) {
 	}
 
 	tracer := New()
+	// Add handler so operations work
+	tracer.OnSpanComplete(func(_ Span) {})
 	activeSpan := &ActiveSpan{span: span, tracer: tracer}
 
 	// Test setting positive integer
@@ -109,6 +115,8 @@ func TestActiveSpanSetBoolTag(t *testing.T) {
 	}
 
 	tracer := New()
+	// Add handler so operations work
+	tracer.OnSpanComplete(func(_ Span) {})
 	activeSpan := &ActiveSpan{span: span, tracer: tracer}
 
 	// Test setting true
@@ -133,6 +141,8 @@ func TestActiveSpanSetTagsAfterFinish(t *testing.T) {
 	}
 
 	tracer := New()
+	// Add handler so operations work
+	tracer.OnSpanComplete(func(_ Span) {})
 	activeSpan := &ActiveSpan{span: span, tracer: tracer}
 
 	// Finish the span
@@ -164,6 +174,8 @@ func TestConcurrentTagSetting(t *testing.T) {
 	}
 
 	tracer := New()
+	// Add handler so operations work
+	tracer.OnSpanComplete(func(_ Span) {})
 	activeSpan := &ActiveSpan{span: span, tracer: tracer}
 
 	var wg sync.WaitGroup
@@ -208,6 +220,8 @@ func TestConcurrentTagGetting(t *testing.T) {
 	}
 
 	tracer := New()
+	// Add handler so operations work
+	tracer.OnSpanComplete(func(_ Span) {})
 	activeSpan := &ActiveSpan{span: span, tracer: tracer}
 
 	// Pre-populate with some tags.
@@ -248,6 +262,8 @@ func TestConcurrentSetAndGet(t *testing.T) {
 	}
 
 	tracer := New()
+	// Add handler so operations work
+	tracer.OnSpanComplete(func(_ Span) {})
 	activeSpan := &ActiveSpan{span: span, tracer: tracer}
 
 	var wg sync.WaitGroup
@@ -335,6 +351,8 @@ func TestActiveSpanContext(t *testing.T) {
 	}
 
 	tracer := New()
+	// Add handler so operations work
+	tracer.OnSpanComplete(func(_ Span) {})
 	activeSpan := &ActiveSpan{span: span, tracer: tracer}
 
 	parentCtx := context.Background()
@@ -351,6 +369,8 @@ func TestActiveSpanContext(t *testing.T) {
 func TestGetSpanFromContext(t *testing.T) {
 	// Test with span in context using proper API.
 	tracer := New()
+	// Add handler so operations work
+	tracer.OnSpanComplete(func(_ Span) {})
 	ctx, activeSpan := tracer.StartSpan(context.Background(), "test-operation")
 
 	extractedSpan := GetSpan(ctx)
@@ -384,6 +404,8 @@ func TestContextKeySafety(t *testing.T) {
 
 	// Set our real span using proper API.
 	tracer := New()
+	// Add handler so spans are put in context
+	tracer.OnSpanComplete(func(_ Span) {})
 	ctx, activeSpan := tracer.StartSpan(ctx, "test-operation")
 
 	// Should extract the real span, not the fake one.
@@ -400,6 +422,8 @@ func TestContextKeySafety(t *testing.T) {
 // TestContextBundling tests the new context bundling approach.
 func TestContextBundling(t *testing.T) {
 	tracer := New()
+	// Add handler so operations work
+	tracer.OnSpanComplete(func(_ Span) {})
 	defer tracer.Close()
 
 	ctx := context.Background()
@@ -432,6 +456,8 @@ func TestContextBundling(t *testing.T) {
 func TestBackwardCompatibilityContext(t *testing.T) {
 	// This test ensures old code using ActiveSpan.Context() still works
 	tracer := New()
+	// Add handler so operations work
+	tracer.OnSpanComplete(func(_ Span) {})
 	defer tracer.Close()
 
 	ctx := context.Background()
@@ -460,6 +486,8 @@ func TestBackwardCompatibilityContext(t *testing.T) {
 
 func TestSetTagAfterFinish(t *testing.T) {
 	tracer := New()
+	// Add handler so operations work
+	tracer.OnSpanComplete(func(_ Span) {})
 	defer tracer.Close()
 
 	// Create a span

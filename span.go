@@ -41,6 +41,11 @@ type ActiveSpan struct {
 // Thread-safe for concurrent access.
 // No-op if span is already finished.
 func (a *ActiveSpan) SetTag(key Tag, value string) {
+	// Fast path when no handlers - avoid lock and map allocation
+	if !a.tracer.hasHandlers() {
+		return
+	}
+
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -60,6 +65,10 @@ func (a *ActiveSpan) SetTag(key Tag, value string) {
 // Thread-safe for concurrent access.
 // No-op if span is already finished.
 func (a *ActiveSpan) SetIntTag(key Tag, value int) {
+	// Fast path when no handlers - avoid string conversion
+	if !a.tracer.hasHandlers() {
+		return
+	}
 	a.SetTag(key, strconv.Itoa(value))
 }
 
@@ -68,6 +77,10 @@ func (a *ActiveSpan) SetIntTag(key Tag, value int) {
 // Thread-safe for concurrent access.
 // No-op if span is already finished.
 func (a *ActiveSpan) SetBoolTag(key Tag, value bool) {
+	// Fast path when no handlers - avoid string conversion
+	if !a.tracer.hasHandlers() {
+		return
+	}
 	a.SetTag(key, strconv.FormatBool(value))
 }
 
@@ -87,6 +100,11 @@ func (a *ActiveSpan) GetTag(key Tag) (string, bool) {
 // Finish completes the span and sends it to the tracer for collection.
 // Safe to call multiple times - subsequent calls are no-ops.
 func (a *ActiveSpan) Finish() {
+	// Fast path when no handlers - avoid all work
+	if !a.tracer.hasHandlers() {
+		return
+	}
+
 	a.mu.Lock()
 	if !a.span.EndTime.IsZero() {
 		a.mu.Unlock()

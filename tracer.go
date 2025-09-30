@@ -64,6 +64,7 @@ func (*Tracer) WithClock(clock clockz.Clock) *Tracer {
 }
 
 // ensureIDPools initializes ID pools if not already created.
+// Only called when handlers exist and IDs are actually needed.
 func (t *Tracer) ensureIDPools() {
 	t.idPoolOnce.Do(func() {
 		// Pool size based on number of CPUs for optimal contention balance.
@@ -140,10 +141,19 @@ func (t *Tracer) SetPanicHook(hook func(handlerID uint64, r interface{})) {
 
 // StartSpan creates a new span and returns it wrapped in an ActiveSpan.
 // If the context contains an existing span, the new span will be its child.
+// If no handlers are registered, returns a no-op span to avoid any overhead.
 func (t *Tracer) StartSpan(ctx context.Context, operation Key) (context.Context, *ActiveSpan) {
 	// Handle nil context by creating a new one.
 	if ctx == nil {
 		ctx = context.Background()
+	}
+
+	// Fast path: no handlers = complete no-op
+	if !t.hasHandlers() {
+		return ctx, &ActiveSpan{
+			span:   &Span{Name: string(operation)},
+			tracer: t,
+		}
 	}
 
 	span := &Span{
@@ -169,6 +179,15 @@ func (t *Tracer) StartSpan(ctx context.Context, operation Key) (context.Context,
 	newCtx := context.WithValue(ctx, bundleKey, bundle)
 
 	return newCtx, activeSpan
+}
+
+// hasHandlers returns true if any handlers are registered.
+// This is a fast check to avoid expensive operations when no handlers exist.
+func (t *Tracer) hasHandlers() bool {
+	t.handlersLock.RLock()
+	hasHandlers := len(t.handlers) > 0
+	t.handlersLock.RUnlock()
+	return hasHandlers
 }
 
 // executeHandlers calls all registered handlers with the completed span.
@@ -237,6 +256,12 @@ func (t *Tracer) EnableWorkerPool(workers, queueSize int) error {
 	return nil
 }
 
+// HasHandlers returns true if any handlers are registered.
+// Useful for checking if tracing is actively being collected.
+func (t *Tracer) HasHandlers() bool {
+	return t.hasHandlers()
+}
+
 // DroppedSpans returns the number of spans dropped due to full worker queue.
 func (t *Tracer) DroppedSpans() uint64 {
 	return t.droppedSpans.Load()
@@ -271,14 +296,14 @@ func (t *Tracer) generateTraceID(ctx context.Context) string {
 		return parentSpan.TraceID
 	}
 
-	// Use ID pool for performance optimization.
+	// Lazy initialization only when actually needed
 	t.ensureIDPools()
 	return t.traceIDPool.Get()
 }
 
 // generateSpanID creates a new span ID using the optimized ID pool.
 func (t *Tracer) generateSpanID() string {
-	// Use ID pool for performance optimization.
+	// Lazy initialization only when actually needed
 	t.ensureIDPools()
 	return t.spanIDPool.Get()
 }

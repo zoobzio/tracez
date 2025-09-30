@@ -49,6 +49,9 @@ func TestTracerStartSpanNoParent(t *testing.T) {
 	tracer := New()
 	ctx := context.Background()
 
+	// Add a handler so spans are actually created
+	tracer.OnSpanComplete(func(_ Span) {})
+
 	newCtx, activeSpan := tracer.StartSpan(ctx, "test-operation")
 
 	// Check span properties.
@@ -83,6 +86,9 @@ func TestTracerStartSpanNoParent(t *testing.T) {
 func TestTracerStartSpanWithParent(t *testing.T) {
 	tracer := New()
 	ctx := context.Background()
+
+	// Add a handler so spans are actually created
+	tracer.OnSpanComplete(func(_ Span) {})
 
 	// Create parent span.
 	parentCtx, parentSpan := tracer.StartSpan(ctx, "parent-operation")
@@ -232,6 +238,8 @@ func TestTracerClose(t *testing.T) {
 
 func TestTracerGenerateIDs(t *testing.T) {
 	tracer := New()
+	// Add handler so IDs are actually generated
+	tracer.OnSpanComplete(func(_ Span) {})
 	ctx := context.Background()
 
 	// Generate multiple spans to test ID uniqueness.
@@ -429,6 +437,8 @@ func TestTracerIDFallback(t *testing.T) {
 	// In practice, this is hard to trigger, but the code handles it.
 
 	tracer := New()
+	// Add handler so spans are created with IDs
+	tracer.OnSpanComplete(func(_ Span) {})
 	ctx := context.Background()
 
 	_, activeSpan := tracer.StartSpan(ctx, "test-operation")
@@ -505,6 +515,8 @@ func TestTracerStressTest(t *testing.T) {
 // TestTracerIDPoolIntegration tests ID pools integrated with tracer.
 func TestTracerIDPoolIntegration(t *testing.T) {
 	tracer := New()
+	// Add handler so ID pools are initialized
+	tracer.OnSpanComplete(func(_ Span) {})
 	defer tracer.Close()
 
 	ctx := context.Background()
@@ -568,6 +580,8 @@ func TestTracerCloseWithPools(t *testing.T) {
 func TestTracerWithFakeClock(t *testing.T) {
 	fakeClock := clockz.NewFakeClock()
 	tracer := New().WithClock(fakeClock)
+	// Add handler so spans track time
+	tracer.OnSpanComplete(func(_ Span) {})
 	defer tracer.Close()
 
 	// Start a span
@@ -597,6 +611,8 @@ func TestTracerWithFakeClock(t *testing.T) {
 // TestTracerBackwardCompatibility ensures New() constructor still works with real clock.
 func TestTracerBackwardCompatibility(t *testing.T) {
 	tracer := New()
+	// Add handler so spans work normally
+	tracer.OnSpanComplete(func(_ Span) {})
 	defer tracer.Close()
 
 	// Should use real clock by default
@@ -622,6 +638,8 @@ func TestTracerBackwardCompatibility(t *testing.T) {
 func TestTracerFallbackIDGeneration(t *testing.T) {
 	fakeClock := clockz.NewFakeClock()
 	tracer := New().WithClock(fakeClock)
+	// Add handler so IDs are generated
+	tracer.OnSpanComplete(func(_ Span) {})
 	defer tracer.Close()
 
 	// Force pool initialization to test fallback behavior
@@ -653,6 +671,9 @@ func TestTracerClockInjection(t *testing.T) {
 
 	tracer1 := New().WithClock(fakeClock1)
 	tracer2 := New().WithClock(fakeClock2)
+	// Add handlers so spans track time
+	tracer1.OnSpanComplete(func(_ Span) {})
+	tracer2.OnSpanComplete(func(_ Span) {})
 	defer tracer1.Close()
 	defer tracer2.Close()
 
