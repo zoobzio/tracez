@@ -216,7 +216,7 @@ func TestAuthenticate_Performance(t *testing.T) {
 	for _, userID := range userIDs {
 		start := time.Now()
 		
-		_, span := tracer.StartSpan(ctx, fmt.Sprintf("auth.%s", userID))
+		_, span := tracer.StartSpan(ctx, tracez.Key(fmt.Sprintf("auth.%s", userID)))
 		authCtx := span.Context(ctx)
 		
 		_, err := auth.Authenticate(authCtx, userID)
@@ -243,7 +243,7 @@ func TestAuthenticate_Performance(t *testing.T) {
 	for _, userID := range userIDs {
 		start := time.Now()
 		
-		_, span := tracer.StartSpan(ctx, fmt.Sprintf("auth.%s.cached", userID))
+		_, span := tracer.StartSpan(ctx, tracez.Key(fmt.Sprintf("auth.%s.cached", userID)))
 		authCtx := span.Context(ctx)
 		
 		_, err := auth.Authenticate(authCtx, userID)
@@ -419,7 +419,7 @@ func TestAuthenticate_ConcurrentLoad(t *testing.T) {
 			defer wg.Done()
 			
 			userStart := time.Now()
-			userCtx, span := tracer.StartSpan(ctx, fmt.Sprintf("concurrent_user_%d", userID))
+			userCtx, span := tracer.StartSpan(ctx, tracez.Key(fmt.Sprintf("concurrent_user_%d", userID)))
 			
 			_, err := auth.Authenticate(userCtx, fmt.Sprintf("user_%d", userID))
 			if err != nil {
