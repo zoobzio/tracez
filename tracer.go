@@ -19,6 +19,13 @@ type contextBundle struct {
 	span   *Span
 }
 
+// Global no-op singleton to eliminate allocations when tracing is disabled.
+// Safe to share because all methods check hasHandlers() before any mutations.
+var noopActiveSpan = &ActiveSpan{
+	span: &Span{},
+	// tracer will be set on each use
+}
+
 // SpanHandler is called when a span completes.
 type SpanHandler func(span Span)
 
@@ -148,12 +155,11 @@ func (t *Tracer) StartSpan(ctx context.Context, operation Key) (context.Context,
 		ctx = context.Background()
 	}
 
-	// Fast path: no handlers = complete no-op
+	// Fast path: no handlers = complete no-op with zero allocations
 	if !t.hasHandlers() {
-		return ctx, &ActiveSpan{
-			span:   &Span{Name: string(operation)},
-			tracer: t,
-		}
+		noopActiveSpan.tracer = t
+		noopActiveSpan.span.Name = string(operation)
+		return ctx, noopActiveSpan
 	}
 
 	span := &Span{

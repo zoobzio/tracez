@@ -87,6 +87,11 @@ func (a *ActiveSpan) SetBoolTag(key Tag, value bool) {
 // GetTag retrieves a tag value by key.
 // Thread-safe for concurrent access.
 func (a *ActiveSpan) GetTag(key Tag) (string, bool) {
+	// Fast path when no handlers - no tags exist
+	if !a.tracer.hasHandlers() {
+		return "", false
+	}
+
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -131,6 +136,11 @@ func (a *ActiveSpan) Finish() {
 // TraceID returns the trace ID of this span.
 // Thread-safe for concurrent access.
 func (a *ActiveSpan) TraceID() string {
+	// Fast path when no handlers - return empty
+	if !a.tracer.hasHandlers() {
+		return ""
+	}
+
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.span.TraceID
@@ -139,6 +149,11 @@ func (a *ActiveSpan) TraceID() string {
 // SpanID returns the span ID of this span.
 // Thread-safe for concurrent access.
 func (a *ActiveSpan) SpanID() string {
+	// Fast path when no handlers - return empty
+	if !a.tracer.hasHandlers() {
+		return ""
+	}
+
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.span.SpanID
@@ -147,6 +162,11 @@ func (a *ActiveSpan) SpanID() string {
 // Context creates a new context with this span embedded.
 // The returned context can be used to start child spans.
 func (a *ActiveSpan) Context(parent context.Context) context.Context {
+	// Fast path when no handlers - return unchanged context
+	if !a.tracer.hasHandlers() {
+		return parent
+	}
+
 	// Use bundled approach for performance optimization.
 	bundle := &contextBundle{tracer: a.tracer, span: a.span}
 	return context.WithValue(parent, bundleKey, bundle)
