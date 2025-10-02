@@ -410,6 +410,13 @@ func TestTracerCompleteWorkflow(t *testing.T) {
 
 func TestTracerKeyConstantsAndBackwardsCompatibility(t *testing.T) {
 	tracer := New()
+
+	// Register a handler so spans are actually created (not no-op)
+	var captured []Span
+	tracer.OnSpanComplete(func(s Span) {
+		captured = append(captured, s)
+	})
+
 	ctx := context.Background()
 
 	// Test Key constants work.

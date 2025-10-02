@@ -42,7 +42,7 @@ type ActiveSpan struct {
 // No-op if span is already finished.
 func (a *ActiveSpan) SetTag(key Tag, value string) {
 	// Fast path when no handlers - avoid lock and map allocation
-	if !a.tracer.hasHandlers() {
+	if a.tracer == nil || !a.tracer.hasHandlers() {
 		return
 	}
 
@@ -66,7 +66,7 @@ func (a *ActiveSpan) SetTag(key Tag, value string) {
 // No-op if span is already finished.
 func (a *ActiveSpan) SetIntTag(key Tag, value int) {
 	// Fast path when no handlers - avoid string conversion
-	if !a.tracer.hasHandlers() {
+	if a.tracer == nil || !a.tracer.hasHandlers() {
 		return
 	}
 	a.SetTag(key, strconv.Itoa(value))
@@ -78,7 +78,7 @@ func (a *ActiveSpan) SetIntTag(key Tag, value int) {
 // No-op if span is already finished.
 func (a *ActiveSpan) SetBoolTag(key Tag, value bool) {
 	// Fast path when no handlers - avoid string conversion
-	if !a.tracer.hasHandlers() {
+	if a.tracer == nil || !a.tracer.hasHandlers() {
 		return
 	}
 	a.SetTag(key, strconv.FormatBool(value))
@@ -88,7 +88,7 @@ func (a *ActiveSpan) SetBoolTag(key Tag, value bool) {
 // Thread-safe for concurrent access.
 func (a *ActiveSpan) GetTag(key Tag) (string, bool) {
 	// Fast path when no handlers - no tags exist
-	if !a.tracer.hasHandlers() {
+	if a.tracer == nil || !a.tracer.hasHandlers() {
 		return "", false
 	}
 
@@ -106,7 +106,7 @@ func (a *ActiveSpan) GetTag(key Tag) (string, bool) {
 // Safe to call multiple times - subsequent calls are no-ops.
 func (a *ActiveSpan) Finish() {
 	// Fast path when no handlers - avoid all work
-	if !a.tracer.hasHandlers() {
+	if a.tracer == nil || !a.tracer.hasHandlers() {
 		return
 	}
 
@@ -137,7 +137,7 @@ func (a *ActiveSpan) Finish() {
 // Thread-safe for concurrent access.
 func (a *ActiveSpan) TraceID() string {
 	// Fast path when no handlers - return empty
-	if !a.tracer.hasHandlers() {
+	if a.tracer == nil || !a.tracer.hasHandlers() {
 		return ""
 	}
 
@@ -150,7 +150,7 @@ func (a *ActiveSpan) TraceID() string {
 // Thread-safe for concurrent access.
 func (a *ActiveSpan) SpanID() string {
 	// Fast path when no handlers - return empty
-	if !a.tracer.hasHandlers() {
+	if a.tracer == nil || !a.tracer.hasHandlers() {
 		return ""
 	}
 
@@ -163,7 +163,7 @@ func (a *ActiveSpan) SpanID() string {
 // The returned context can be used to start child spans.
 func (a *ActiveSpan) Context(parent context.Context) context.Context {
 	// Fast path when no handlers - return unchanged context
-	if !a.tracer.hasHandlers() {
+	if a.tracer == nil || !a.tracer.hasHandlers() {
 		return parent
 	}
 

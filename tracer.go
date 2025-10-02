@@ -157,8 +157,7 @@ func (t *Tracer) StartSpan(ctx context.Context, operation Key) (context.Context,
 
 	// Fast path: no handlers = complete no-op with zero allocations
 	if !t.hasHandlers() {
-		noopActiveSpan.tracer = t
-		noopActiveSpan.span.Name = string(operation)
+		// Return the same immutable instance every time - true no-op
 		return ctx, noopActiveSpan
 	}
 
