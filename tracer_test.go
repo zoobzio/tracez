@@ -1044,3 +1044,128 @@ func TestPanicIsolation(t *testing.T) {
 		t.Errorf("Expected 1 panic, got %d", panicCount)
 	}
 }
+
+func TestLazyWorkerPoolCreation(t *testing.T) {
+	tracer := New()
+	defer tracer.Close()
+
+	var wg sync.WaitGroup
+	var called bool
+	var mu sync.Mutex
+
+	// Register async handler WITHOUT calling EnableWorkerPool
+	// This should auto-create the worker pool
+	tracer.OnSpanCompleteAsync(func(_ Span) {
+		mu.Lock()
+		called = true
+		mu.Unlock()
+		wg.Done()
+	})
+
+	// Verify worker pool was created
+	if tracer.workers == nil {
+		t.Fatal("Worker pool should have been auto-created")
+	}
+
+	wg.Add(1)
+
+	// Create and finish a span
+	_, span := tracer.StartSpan(context.Background(), "test")
+	span.Finish()
+
+	// Wait for async handler with timeout
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		mu.Lock()
+		if !called {
+			t.Error("Handler should have been called")
+		}
+		mu.Unlock()
+	case <-time.After(2 * time.Second):
+		t.Fatal("Timeout waiting for handler")
+	}
+}
+
+func TestWithIDPoolSize(t *testing.T) {
+	// Create tracer with custom pool size
+	tracer := New().WithIDPoolSize(50)
+	defer tracer.Close()
+
+	// Verify the multiplier was set
+	if tracer.idPoolMultiplier != 50 {
+		t.Errorf("Expected idPoolMultiplier to be 50, got %d", tracer.idPoolMultiplier)
+	}
+
+	// Register handler to trigger ID pool initialization
+	tracer.OnSpanComplete(func(_ Span) {})
+
+	// Create span to trigger pool creation
+	_, span := tracer.StartSpan(context.Background(), "test")
+	span.Finish()
+
+	// Verify pools were created
+	if tracer.traceIDPool == nil {
+		t.Error("traceIDPool should be initialized")
+	}
+	if tracer.spanIDPool == nil {
+		t.Error("spanIDPool should be initialized")
+	}
+}
+
+func TestDefaultIDPoolSize(t *testing.T) {
+	// Create tracer with default settings
+	tracer := New()
+	defer tracer.Close()
+
+	// Verify default multiplier (0 means use default)
+	if tracer.idPoolMultiplier != 0 {
+		t.Errorf("Expected default idPoolMultiplier to be 0, got %d", tracer.idPoolMultiplier)
+	}
+
+	// Register handler to trigger ID pool initialization
+	tracer.OnSpanComplete(func(_ Span) {})
+
+	// Create span to trigger pool creation
+	_, span := tracer.StartSpan(context.Background(), "test")
+	span.Finish()
+
+	// Verify pools were created with default size
+	if tracer.traceIDPool == nil {
+		t.Error("traceIDPool should be initialized")
+	}
+	if tracer.spanIDPool == nil {
+		t.Error("spanIDPool should be initialized")
+	}
+}
+
+func TestWithMethodChaining(t *testing.T) {
+	fakeClock := clockz.NewFakeClock()
+
+	// Test chaining: Clock then IDPoolSize
+	tracer1 := New().WithClock(fakeClock).WithIDPoolSize(50)
+	defer tracer1.Close()
+
+	if tracer1.clock != fakeClock {
+		t.Error("Clock should be preserved when chaining")
+	}
+	if tracer1.idPoolMultiplier != 50 {
+		t.Errorf("Expected idPoolMultiplier to be 50, got %d", tracer1.idPoolMultiplier)
+	}
+
+	// Test chaining: IDPoolSize then Clock
+	tracer2 := New().WithIDPoolSize(25).WithClock(fakeClock)
+	defer tracer2.Close()
+
+	if tracer2.clock != fakeClock {
+		t.Error("Clock should be set")
+	}
+	if tracer2.idPoolMultiplier != 25 {
+		t.Errorf("Expected idPoolMultiplier to be 25, got %d", tracer2.idPoolMultiplier)
+	}
+}

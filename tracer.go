@@ -13,6 +13,13 @@ import (
 	"github.com/zoobzio/clockz"
 )
 
+const (
+	// defaultIDPoolMultiplier determines ID pool size per CPU core.
+	// Pool size = NumCPU * multiplier. Sized to amortize crypto/rand overhead
+	// while avoiding excessive memory. At 8 cores: 800 buffered IDs (~50KB).
+	defaultIDPoolMultiplier = 100
+)
+
 // contextBundle holds both tracer and span to reduce context allocations.
 type contextBundle struct {
 	tracer *Tracer
@@ -40,16 +47,17 @@ type handlerEntry struct {
 //
 //nolint:govet // Field order optimized for functionality over memory
 type Tracer struct {
-	handlers     []handlerEntry
-	panicHook    func(handlerID uint64, r interface{})
-	workers      *workerPool
-	traceIDPool  *IDPool
-	spanIDPool   *IDPool
-	clock        clockz.Clock
-	handlersLock sync.RWMutex
-	idPoolOnce   sync.Once
-	nextID       atomic.Uint64
-	droppedSpans atomic.Uint64
+	handlers         []handlerEntry
+	panicHook        func(handlerID uint64, r interface{})
+	workers          *workerPool
+	traceIDPool      *IDPool
+	spanIDPool       *IDPool
+	clock            clockz.Clock
+	handlersLock     sync.RWMutex
+	idPoolOnce       sync.Once
+	nextID           atomic.Uint64
+	droppedSpans     atomic.Uint64
+	idPoolMultiplier int // 0 means use default
 }
 
 // New creates a new tracer.
@@ -63,10 +71,22 @@ func New() *Tracer {
 
 // WithClock returns a new tracer with the specified clock.
 // Enables clock injection for deterministic testing.
-func (*Tracer) WithClock(clock clockz.Clock) *Tracer {
+func (t *Tracer) WithClock(clock clockz.Clock) *Tracer {
 	return &Tracer{
-		handlers: make([]handlerEntry, 0),
-		clock:    clock,
+		handlers:         make([]handlerEntry, 0),
+		clock:            clock,
+		idPoolMultiplier: t.idPoolMultiplier,
+	}
+}
+
+// WithIDPoolSize returns a new tracer with a custom ID pool size multiplier.
+// Pool size = NumCPU * multiplier. Default is 100.
+// Use this to tune memory vs ID generation performance trade-offs.
+func (t *Tracer) WithIDPoolSize(multiplier int) *Tracer {
+	return &Tracer{
+		handlers:         make([]handlerEntry, 0),
+		clock:            t.clock,
+		idPoolMultiplier: multiplier,
 	}
 }
 
@@ -74,8 +94,12 @@ func (*Tracer) WithClock(clock clockz.Clock) *Tracer {
 // Only called when handlers exist and IDs are actually needed.
 func (t *Tracer) ensureIDPools() {
 	t.idPoolOnce.Do(func() {
+		multiplier := t.idPoolMultiplier
+		if multiplier == 0 {
+			multiplier = defaultIDPoolMultiplier
+		}
 		// Pool size based on number of CPUs for optimal contention balance.
-		poolSize := runtime.NumCPU() * 100
+		poolSize := runtime.NumCPU() * multiplier
 
 		t.traceIDPool = NewIDPool(poolSize, func() string {
 			bytes := make([]byte, 16)
@@ -103,7 +127,21 @@ func (t *Tracer) OnSpanComplete(handler SpanHandler) uint64 {
 }
 
 // OnSpanCompleteAsync registers an asynchronous handler called when spans complete.
+// Automatically enables a default worker pool if not already configured.
 func (t *Tracer) OnSpanCompleteAsync(handler SpanHandler) uint64 {
+	if handler == nil {
+		return 0
+	}
+
+	// Lazy-create default worker pool if not already enabled
+	if t.workers == nil {
+		// Reasonable defaults: NumCPU workers, 1000 queue depth
+		if err := t.EnableWorkerPool(runtime.NumCPU(), 1000); err != nil {
+			// This should never happen with valid defaults, indicates a bug in tracez
+			panic("tracez: failed to enable default worker pool: " + err.Error())
+		}
+	}
+
 	return t.registerHandler(handler, true)
 }
 
@@ -211,13 +249,9 @@ func (t *Tracer) executeHandlers(span Span) {
 		if h.async {
 			// Make a copy of h for closure
 			entry := h
-			if t.workers != nil {
-				t.workers.submit(func() {
-					t.safeCall(entry, span)
-				})
-			} else {
-				go t.safeCall(entry, span)
-			}
+			t.workers.submit(func() {
+				t.safeCall(entry, span)
+			})
 		} else {
 			t.safeCall(h, span)
 		}

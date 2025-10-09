@@ -40,16 +40,10 @@ func (p *IDPool) Get() string {
 func (p *IDPool) refill() {
 	for {
 		select {
+		case p.ids <- p.factory():
+			// Successfully added ID to pool.
 		case <-p.stopCh:
 			return
-		default:
-			// Only generate if pool has capacity.
-			select {
-			case p.ids <- p.factory():
-				// Successfully added ID to pool.
-			case <-p.stopCh:
-				return
-			}
 		}
 	}
 }

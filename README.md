@@ -67,11 +67,11 @@ import (
 
 func main() {
     // Create tracer for your library/component
-    tracer := tracez.New("auth-component")  // Component name, not service
+    tracer := tracez.New()
     defer tracer.Close()
     
     // Register callback for span completion
-    tracer.OnSpanFinish(func(span tracez.Span) {
+    tracer.OnSpanComplete(func(span tracez.Span) {
         // Send to your APM system
         sendToAPM(span)
     })
@@ -105,7 +105,7 @@ tracez provides primitives. You build the system:
 var spans []tracez.Span
 var mu sync.Mutex
 
-tracer.OnSpanFinish(func(span tracez.Span) {
+tracer.OnSpanComplete(func(span tracez.Span) {
     mu.Lock()
     spans = append(spans, span)
     mu.Unlock()
@@ -162,7 +162,7 @@ func (e *APMExporter) Run(ctx context.Context) {
 
 // Register with tracer
 exporter := &APMExporter{client: http.DefaultClient, endpoint: "..."}
-tracer.OnSpanFinish(exporter.CollectSpan)
+tracer.OnSpanComplete(exporter.CollectSpan)
 ```
 
 ## Components
@@ -171,7 +171,7 @@ tracer.OnSpanFinish(exporter.CollectSpan)
 Manages span lifecycle within your Go application. One per library/component.
 
 ```go
-tracer := tracez.New("component-name")  // Not service name
+tracer := tracez.New()
 ctx, span := tracer.StartSpan(context.Background(), "operation")
 ```
 
@@ -190,15 +190,15 @@ Register functions to process spans on completion. Foundation for exporters.
 
 ```go
 // Single callback
-tracer.OnSpanFinish(func(span tracez.Span) {
+tracer.OnSpanComplete(func(span tracez.Span) {
     // Process completed span
     exportToAPM(span)
 })
 
 // Multiple callbacks supported
-tracer.OnSpanFinish(logSpan)
-tracer.OnSpanFinish(metricCollector.Record)
-tracer.OnSpanFinish(apmExporter.Send)
+tracer.OnSpanComplete(logSpan)
+tracer.OnSpanComplete(metricCollector.Record)
+tracer.OnSpanComplete(apmExporter.Send)
 
 // Callbacks receive immutable span data
 // Called synchronously on span.Finish()
